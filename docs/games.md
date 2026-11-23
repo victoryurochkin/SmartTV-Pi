@@ -2,6 +2,8 @@
 
 В Kodi откройте **HomeTV Pi → Игры** и выберите **Денди / NES**, **Sega Mega Drive** или **PlayStation 1**. Выберите накопитель, затем файл игры. Можно запустить файл прямо с USB или открыть его из `/data/home/roms/nes`, `/data/home/roms/megadrive` либо `/data/home/roms/psx`. Ядро выбирается по консоли. RetroArch запускается через Cage и возвращает управление Kodi после выхода. [Исходники RetroArch](https://github.com/libretro/RetroArch).
 
+![Три консоли в меню Kodi Estuary](images/retro.png)
+
 | Консоль | Ядро | Входные файлы |
 | --- | --- | --- |
 | Dendy / NES / Famicom | [Nestopia UE](https://github.com/0ldsk00l/nestopia) | `.nes`, `.unf`, `.unif`. Для `.fds` нужен собственный `disksys.rom` в `/data/home/bios/nes`. Если игра идёт с неверной скоростью, выберите **Quick Menu → Core Options → System Region → Dendy**. |
