@@ -50,4 +50,4 @@
 }
 ```
 
-При диагностике зависшей сессии с локальной консоли или через разрешённый SSH выполните `sudo systemctl start home-tv-kodi.service` и проверьте журнал командой `journalctl -u home-tv-browser.service -u home-tv-browser-input.service -u home-tv-session.service`. В штатном интерфейсе используются локальные команды `/usr/lib/home-tv/session open <id>` и `/usr/lib/home-tv/session home` от имени службы `hometv`.
+В штатном интерфейсе для возврата воспользуйтесь **Главный экран** в веб-пульте или F12. Локальные команды от имени `hometv`: `/usr/lib/home-tv/session open <id>` и `/usr/lib/home-tv/session home`. Состояние менеджера сессий доступно в диагностическом архиве панели. Для `systemctl start home-tv-kodi.service` и просмотра системного журнала нужен отдельно настроенный доступ сопровождающего с правами администратора.

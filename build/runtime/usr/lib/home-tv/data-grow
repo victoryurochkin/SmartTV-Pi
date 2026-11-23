@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export LC_ALL=C
+
+expected=$(findmnt --fstab --noheadings --output SOURCE /data)
+if [[ ! $expected =~ ^PARTUUID=([a-f0-9]{8})-03$ ]]; then
+    echo 'Неверный идентификатор раздела /data.' >&2
+    exit 1
+fi
+disk_id=${BASH_REMATCH[1]}
+if ! grep -qw "root=PARTUUID=$disk_id-02" /proc/cmdline; then
+    echo 'Раздел /data находится вне загрузочного носителя.' >&2
+    exit 1
+fi
+
+root_link="/dev/disk/by-partuuid/$disk_id-02"
+data_link="/dev/disk/by-partuuid/$disk_id-03"
+udevadm wait --timeout=20 "$root_link" "$data_link"
+root=$(readlink -f "$root_link")
+data=$(readlink -f "$data_link")
+mounted_root=$(findmnt -nr -t ext4 -o MAJ:MIN --mountpoint /media/root-ro ||
+    findmnt -nr -t ext4 -o MAJ:MIN --mountpoint /)
+if [[ $mounted_root != "$(cat "/sys/class/block/${root##*/}/dev")" ]]; then
+    echo 'Идентификатор загрузочного носителя не совпадает со смонтированным корнем.' >&2
+    exit 1
+fi
+parent=$(lsblk --nodeps --noheadings --output PKNAME "$data")
+if [[ -z $parent || $parent != "$(lsblk --nodeps --noheadings --output PKNAME "$root")" ]] ||
+   [[ $(cat "/sys/class/block/${data##*/}/partition") != 3 ]] ||
+   [[ $(lsblk --noheadings --list --output TYPE "/dev/$parent" | grep -c '^part$') != 3 ]] ||
+   [[ $(blkid -s LABEL -o value "$data") != HOMETV_DATA ]] ||
+   findmnt --noheadings --source "$data" >/dev/null; then
+    echo 'Разметка раздела /data отличается от ожидаемой.' >&2
+    exit 1
+fi
+
+status=0
+growpart "/dev/$parent" 3 || status=$?
+# growpart uses 1 for a partition with no usable extra space.
+if ((status > 1)); then
+    exit "$status"
+fi
+if ((status == 0)); then
+    udevadm settle --timeout=20
+    udevadm wait --timeout=20 "$data_link"
+    data=$(readlink -f "$data_link")
+fi
+status=0
+e2fsck -p "$data" || status=$?
+if ((status > 1)); then
+    exit "$status"
+fi
+resize2fs "$data"
+

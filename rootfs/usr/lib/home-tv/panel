@@ -1,0 +1,350 @@
+#!/usr/bin/python3
+from collections import deque
+import ipaddress
+from io import BytesIO
+import json
+from http import HTTPStatus
+from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
+from pathlib import Path
+import secrets
+import ssl
+import subprocess
+import tempfile
+import threading
+import time
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from evdev.uinput import UInputError
+
+from hometv_backup import export_backup, list_backups, restore_backup
+from hometv_input import InputDevice
+from hometv_state import CONFIG, check_pin, read_json, write_json
+from hometv_streaming import load_catalogue, validate_catalogue, validate_service_id
+
+
+ASSETS = Path("/usr/share/home-tv/panel")
+RUNTIME = Path("/run/home-tv-panel")
+PORT = 8443
+SESSION_LIFE = 1800
+MAX_BODY = 65536
+PRIVATE = tuple(ipaddress.ip_network(network) for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+UNIT_NAMES = ("home-tv-kodi.service", "home-tv-browser.service", "home-tv-profile.service", "home-tv-state.service")
+ACTION_NAMES = {"wifi-scan", "wifi-connect", "ssh-status", "ssh-configure", "timezone"}
+KEY_NAMES = {"up", "down", "left", "right", "ok", "enter", "backspace", "escape", "play_pause",
+             "volume_up", "volume_down", "mute", "mode"}
+
+
+def command(*argv, payload=None, timeout=8):
+    result = subprocess.run(argv, input=payload, capture_output=True, text=True, timeout=timeout, check=True)
+    return result.stdout.strip()
+
+
+def links():
+    try:
+        entries = json.loads(command("/usr/sbin/ip", "-j", "-4", "address", "show", "up", "scope", "global"))
+        interfaces = [ipaddress.ip_interface(f'{item["local"]}/{item["prefixlen"]}')
+                      for entry in entries for item in entry.get("addr_info", [])
+                      if "local" in item and "prefixlen" in item]
+        return tuple(interface for interface in interfaces if any(interface.ip in network for network in PRIVATE))
+    except (OSError, TypeError, ValueError, subprocess.SubprocessError):
+        return ()
+
+
+def configure_tls(interfaces):
+    certificate, key = CONFIG / "panel.crt", CONFIG / "panel.key"
+    names = sorted({"DNS:hometv.local", *(f"IP:{item.ip}" for item in interfaces)})
+    desired = ",".join(names)
+    if not certificate.is_file() or not key.is_file() or read_json(CONFIG / "panel-san.json") != desired:
+        with tempfile.TemporaryDirectory(dir=CONFIG) as temporary:
+            new_cert, new_key = Path(temporary) / "crt", Path(temporary) / "key"
+            command("/usr/bin/openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+                    "-nodes", "-sha256", "-days", "730", "-subj", "/CN=HomeTV Pi", "-addext",
+                    f"subjectAltName={desired}", "-keyout", str(new_key), "-out", str(new_cert))
+            new_key.replace(key)
+            new_cert.replace(certificate)
+            write_json(CONFIG / "panel-san.json", desired)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(certificate, key)
+    fingerprint = command("/usr/bin/openssl", "x509", "-in", str(certificate), "-noout", "-sha256", "-fingerprint")
+    write_json(RUNTIME / "addresses.json", {"urls": [f"https://{item.ip}:{PORT}" for item in interfaces],
+                                            "fingerprint": fingerprint.split("=", 1)[-1]})
+    return context
+
+
+def status(interfaces):
+    temperature = None
+    throttle = None
+    meminfo = {}
+    try:
+        temperature = round(int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000, 1)
+    except (OSError, ValueError):
+        pass
+    try:
+        throttle = command("/usr/bin/vcgencmd", "get_throttled")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        label, value = line.split(":", 1)
+        if label in {"MemTotal", "MemAvailable"}:
+            meminfo[label] = int(value.split()[0]) // 1024
+    states = {}
+    failures = {}
+    for unit in UNIT_NAMES:
+        result = subprocess.run(["/usr/bin/systemctl", "show", "-p", "ActiveState", "-p", "Result",
+                                 "-p", "ExecMainStatus", unit],
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=2)
+        fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        states[unit] = fields.get("ActiveState", "unknown")
+        if fields.get("Result") not in {None, "", "success"}:
+            failures[unit] = {"result": fields["Result"], "code": fields.get("ExecMainStatus")}
+    version = Path("/etc/hometv-version")
+    return {"version": version.read_text().strip() if version.is_file() else "dev", "load": os.getloadavg(),
+            "memory": meminfo, "temperature": temperature, "throttle": throttle,
+            "network": [str(interface) for interface in interfaces], "units": states, "failures": failures}
+
+
+def diagnostics(interfaces):
+    stream = BytesIO()
+    with ZipFile(stream, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("status.json", json.dumps(status(interfaces), ensure_ascii=False, indent=2))
+        profile = Path("/run/mediacenter/profile.env")
+        if profile.is_file():
+            archive.writestr("profile.env", profile.read_bytes())
+    return stream.getvalue()
+
+
+class Panel(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 12
+
+    def __init__(self, interfaces):
+        self.interfaces = interfaces
+        self.tls = configure_tls(interfaces)
+        self.hosts = {f"{item.ip}:{PORT}" for item in interfaces}
+        self.clients = threading.BoundedSemaphore(12)
+        self.auth_lock = threading.Lock()
+        self.input_lock = threading.Lock()
+        self.sessions = {}
+        self.attempts = deque()
+        self.device = None
+        super().__init__(("0.0.0.0", PORT), Handler)
+
+    def verify_request(self, request, client_address):
+        address = ipaddress.ip_address(client_address[0])
+        return any(address in local.network for local in self.interfaces)
+
+    def process_request(self, request, address):
+        if not self.clients.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        super().process_request(request, address)
+
+    def process_request_thread(self, request, address):
+        request.settimeout(7)
+        try:
+            connection = self.tls.wrap_socket(request, server_side=True)
+        except (OSError, ssl.SSLError):
+            self.shutdown_request(request)
+        else:
+            super().process_request_thread(connection, address)
+        finally:
+            self.clients.release()
+
+    def authenticate(self, pin):
+        with self.auth_lock:
+            now = time.monotonic()
+            while self.attempts and now - self.attempts[0] > 60:
+                self.attempts.popleft()
+            if len(self.attempts) >= 5:
+                return None, HTTPStatus.TOO_MANY_REQUESTS
+            self.attempts.append(now)
+            if not check_pin(pin, read_json(CONFIG / "pin.json")):
+                return None, HTTPStatus.UNAUTHORIZED
+            token = secrets.token_urlsafe(32)
+            self.sessions = {key: until for key, until in self.sessions.items() if until > now}
+            if len(self.sessions) >= 32:
+                self.sessions.pop(next(iter(self.sessions)))
+            self.sessions[token] = now + SESSION_LIFE
+            return token, HTTPStatus.OK
+
+    def authorized(self, cookie):
+        cookies = SimpleCookie()
+        cookies.load(cookie)
+        token = cookies.get("hometv")
+        with self.auth_lock:
+            return bool(token and self.sessions.get(token.value, 0) > time.monotonic())
+
+    def remote(self, data):
+        action = data.get("action")
+        if action == "home":
+            kodi = subprocess.run(["/usr/bin/systemctl", "is-active", "--quiet", "home-tv-kodi.service"],
+                                  timeout=4).returncode == 0
+            command("/usr/lib/home-tv/session", "home", timeout=18)
+            if not kodi:
+                return
+        if action == "key" and data.get("key") in {"volume_up", "volume_down", "mute"}:
+            if subprocess.run(["/usr/bin/systemctl", "is-active", "--quiet", "home-tv-browser.service"],
+                              timeout=4).returncode == 0:
+                socket_path = f"unix:/run/user/{os.getuid()}/pulse/native"
+                if data["key"] == "mute":
+                    command("/usr/bin/pactl", "-s", socket_path, "set-sink-mute", "@DEFAULT_SINK@", "toggle")
+                else:
+                    delta = "+5%" if data["key"] == "volume_up" else "-5%"
+                    command("/usr/bin/pactl", "-s", socket_path, "set-sink-volume", "@DEFAULT_SINK@", delta)
+                return
+        with self.input_lock:
+            if self.device is None:
+                self.device = InputDevice(name="HomeTV Phone")
+                time.sleep(0.2)
+            if action == "home":
+                self.device.key("f8")
+            elif action == "key" and data.get("key") in KEY_NAMES:
+                self.device.key(data["key"])
+            elif action == "move" and all(type(data.get(axis)) is int and -250 <= data[axis] <= 250 for axis in ("x", "y")):
+                self.device.move(data["x"], data["y"])
+            elif action == "click":
+                self.device.click("left")
+            elif action == "text" and isinstance(data.get("text"), str) and len(data["text"]) <= 256:
+                self.device.type_text(data["text"])
+            else:
+                raise ValueError("Недопустимая команда пульта")
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        return
+
+    def send_payload(self, code, content, media="application/json; charset=utf-8", cookie=None):
+        if not isinstance(content, bytes):
+            content = json.dumps(content, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", media)
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if cookie:
+            self.send_header("Set-Cookie", f"hometv={cookie}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_LIFE}")
+        self.end_headers()
+        self.wfile.write(content)
+
+    def gate(self, post=False, login=False, public=False):
+        host = self.headers.get("Host")
+        if host not in self.server.hosts or (post and self.headers.get("Origin") != f"https://{host}"):
+            self.send_payload(403, {"error": "Доступ только из локальной сети"})
+            return False
+        if not (login or public or self.server.authorized(self.headers.get("Cookie", ""))):
+            self.send_payload(401, {"error": "Введите PIN"})
+            return False
+        return True
+
+    def do_GET(self):
+        files = {"/": ("index.html", "text/html"), "/panel.css": ("panel.css", "text/css"),
+                 "/panel.js": ("panel.js", "application/javascript")}
+        if not self.gate(public=self.path in files):
+            return
+        try:
+            if self.path in files:
+                filename, media = files[self.path]
+                self.send_payload(200, (ASSETS / filename).read_bytes(), f"{media}; charset=utf-8")
+            elif self.path == "/api/status":
+                self.send_payload(200, status(self.server.interfaces))
+            elif self.path == "/api/diagnostics":
+                self.send_payload(200, diagnostics(self.server.interfaces), "application/zip")
+            elif self.path == "/api/services":
+                self.send_payload(200, {"services": list(load_catalogue().values())})
+            elif self.path == "/api/usb":
+                self.send_payload(200, json.loads(command("/usr/lib/home-tv/usb", "list")))
+            elif self.path == "/api/parental":
+                self.send_payload(200, read_json(CONFIG / "parental.json", {"locked": []}))
+            else:
+                self.send_payload(404, {"error": "Страница не найдена"})
+        except (OSError, TypeError, ValueError, subprocess.SubprocessError):
+            self.send_payload(500, {"error": "Не удалось прочитать состояние"})
+
+    def do_POST(self):
+        login = self.path == "/api/login"
+        if not self.gate(post=True, login=login):
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= MAX_BODY or self.headers.get_content_type() != "application/json":
+                raise ValueError("Неверный размер или формат запроса")
+            data = json.loads(self.rfile.read(length))
+            if not isinstance(data, dict):
+                raise ValueError("Ожидался объект JSON")
+            if login:
+                token, code = self.server.authenticate(data.get("pin"))
+                self.send_payload(code, {} if token else {"error": "PIN неверен или исчерпаны попытки входа"}, cookie=token)
+            else:
+                self.send_payload(200, self.dispatch(data))
+        except (TypeError, ValueError) as exc:
+            self.send_payload(400, {"error": str(exc)})
+        except (OSError, RuntimeError, UInputError, subprocess.SubprocessError):
+            self.send_payload(503, {"error": "Операция недоступна. Проверьте состояние устройства"})
+
+    def dispatch(self, data):
+        if self.path == "/api/remote":
+            self.server.remote(data)
+        elif self.path == "/api/services":
+            validate_catalogue(data)
+            write_json(CONFIG / "services.json", data)
+        elif self.path == "/api/parental":
+            locked = data.get("locked")
+            if not isinstance(locked, list) or len(locked) > 100 or any(
+                    not validate_service_id(item) for item in locked):
+                raise ValueError("Укажите идентификаторы защищённых плиток")
+            write_json(CONFIG / "parental.json", {"locked": list(dict.fromkeys(locked))})
+        elif self.path == "/api/admin" and data.get("action") in ACTION_NAMES:
+            result = subprocess.run(["/usr/bin/sudo", "-n", "/usr/lib/home-tv/admin"], input=json.dumps(data),
+                                    capture_output=True, text=True, timeout=35)
+            response = json.loads(result.stdout)
+            if result.returncode:
+                raise ValueError(response.get("error", "Системная операция завершилась ошибкой"))
+            return response
+        elif self.path == "/api/backup":
+            action, device = data.get("action"), data.get("device")
+            if not isinstance(device, str):
+                raise ValueError("Выберите USB-накопитель")
+            if action == "export":
+                return {"file": Path(export_backup(device)).name}
+            if action == "list":
+                return {"files": list_backups(device)}
+            if action == "restore" and isinstance(data.get("file"), str):
+                return {"restored": restore_backup(device, data["file"])}
+            raise ValueError("Неизвестная операция резервного копирования")
+        else:
+            raise ValueError("Неизвестная операция")
+        return {"ok": True}
+
+
+def main():
+    os.umask(0o077)
+    while True:
+        interfaces = links()
+        if not interfaces or not (CONFIG / "pin.json").is_file():
+            (RUNTIME / "addresses.json").unlink(missing_ok=True)
+            time.sleep(3)
+            continue
+        with Panel(interfaces) as server:
+            server.timeout = 1
+            check_at = time.monotonic() + 4
+            pin_identity = (CONFIG / "pin.json").stat().st_ino
+            while True:
+                server.handle_request()
+                if time.monotonic() < check_at:
+                    continue
+                pin_file = CONFIG / "pin.json"
+                if not pin_file.is_file() or pin_file.stat().st_ino != pin_identity or interfaces != links():
+                    break
+                check_at = time.monotonic() + 4
+            if server.device is not None:
+                server.device.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,24 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #f0f6f7; background: #10171f; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(100% - 2rem, 42rem); margin: 2rem auto; }
+h1 { margin: 0; font-size: 2.4rem; letter-spacing: -.04em; }
+h2 { margin-top: .25rem; }
+p { color: #a7becf; }
+[hidden] { display: none !important; }
+#message:empty { display: none; }
+section, details, #login { padding: 1.15rem; margin-bottom: 1rem; border: 1px solid #345065; border-radius: .7rem; background: #172530; }
+summary { cursor: pointer; font-weight: 650; }
+details[open] summary { margin-bottom: 1rem; }
+form { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .85rem; }
+label { width: 100%; color: #c9dce5; font-size: .9rem; }
+label.inline { display: flex; align-items: center; gap: .4rem; }
+input, textarea, select, button { font: inherit; }
+input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: .35rem; color: #f0f6f7; background: #10171f; border: 1px solid #48677a; border-radius: .4rem; padding: .65rem; }
+textarea { resize: vertical; }
+button { color: #11281b; background: #bdf6d7; font-weight: 650; border-radius: .4rem; border: 0; min-height: 44px; padding: .55rem .78rem; cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #fae48c; outline-offset: 2px; }
+.remote { display: grid; grid-template-columns: minmax(0, 1fr) 3.5rem minmax(0, 1fr); gap: .4rem; }
+.remote button { padding-inline: .25rem; }
+#touchpad { touch-action: none; user-select: none; color: #d3e7ef; margin-top: .7rem; min-height: 8rem; width: 100%; background: #10171f; border: 1px dashed #567a8e; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }

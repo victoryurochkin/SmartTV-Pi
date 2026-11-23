@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>HomeTV Pi</title>
+  <link rel="stylesheet" href="/panel.css">
+  <script src="/panel.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><h1>HomeTV Pi</h1><p id="device"></p></header>
+    <p id="message" role="status" aria-live="polite"></p>
+    <form id="login" autocomplete="off">
+      <label>PIN панели <input name="pin" type="password" inputmode="numeric" required minlength="6" maxlength="12" pattern="[0-9]{6,12}"></label>
+      <button>Войти</button>
+    </form>
+    <div id="controls" hidden>
+      <section aria-labelledby="remote-heading">
+        <h2 id="remote-heading">Пульт</h2>
+        <div class="buttons remote">
+          <button data-action="home">Главный экран</button>
+          <button data-key="up" aria-label="Вверх">↑</button>
+          <button data-key="mode">Курсор / стрелки</button>
+          <button data-key="left" aria-label="Влево">←</button>
+          <button data-key="ok">OK</button>
+          <button data-key="right" aria-label="Вправо">→</button>
+          <button data-key="escape">Назад</button>
+          <button data-key="down" aria-label="Вниз">↓</button>
+          <button data-key="play_pause">Пауза / пуск</button>
+          <button data-key="volume_down" aria-label="Тише">−</button>
+          <button data-key="mute">Без звука</button>
+          <button data-key="volume_up" aria-label="Громче">+</button>
+        </div>
+        <button id="touchpad" type="button">Тачпад · коснитесь для щелчка</button>
+        <form id="keyboard" autocomplete="off">
+          <label>Отправить в активное поле <input type="password" name="text" maxlength="256" required placeholder="Латиница, цифры и знаки"></label>
+          <button>Отправить</button>
+          <button type="button" data-key="backspace">Стереть</button>
+          <button type="button" data-key="enter">Enter</button>
+        </form>
+      </section>
+      <details>
+        <summary>Состояние и диагностика</summary>
+        <pre id="status"></pre>
+        <button id="refresh" type="button">Обновить</button>
+        <button id="diagnostic" type="button">Скачать архив диагностики</button>
+      </details>
+      <details>
+        <summary>Плитки сервисов</summary>
+        <form id="services">
+          <label>Каталог JSON <textarea name="catalogue" rows="12" spellcheck="false"></textarea></label>
+          <button>Сохранить каталог</button>
+        </form>
+        <form id="new-service">
+          <label>Название <input name="label" maxlength="50" required></label>
+          <label>Официальный HTTPS-адрес <input name="url" type="url" required></label>
+          <button>Добавить плитку</button>
+        </form>
+      </details>
+      <details>
+        <summary>PIN на плитках</summary>
+        <form id="parental">
+          <label>Идентификаторы плиток через пробел <input name="locked" placeholder="youtube-tv netflix files"></label>
+          <button>Сохранить</button>
+        </form>
+      </details>
+      <details>
+        <summary>Wi-Fi и SSH</summary>
+        <form id="wifi" autocomplete="off">
+          <label>Название сети (SSID) <input name="ssid" list="networks" required><datalist id="networks"></datalist></label>
+          <label>Пароль Wi-Fi <input name="password" type="password"></label>
+          <label class="inline"><input name="hidden" type="checkbox">Скрытая сеть</label>
+          <button>Подключить</button>
+          <button id="scan" type="button">Найти сети</button>
+        </form>
+        <form id="ssh" autocomplete="off">
+          <label>Публичный ключ SSH <textarea name="key" rows="2" placeholder="ssh-ed25519 …" required></textarea></label>
+          <button>Включить SSH</button>
+          <button id="ssh-off" type="button">Выключить SSH</button>
+        </form>
+      </details>
+      <details>
+        <summary>Резервная копия на USB</summary>
+        <form id="backup">
+          <label>Раздел <select name="device" required></select></label>
+          <button id="drives" type="button">Обновить список USB</button>
+          <button name="action" value="export">Записать копию</button>
+          <button name="action" value="list">Найти копии</button>
+          <label>Архив <select name="file"></select></label>
+          <button name="action" value="restore">Восстановить</button>
+        </form>
+      </details>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,6 @@
+#!/usr/bin/python3
+from hometv_backup import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

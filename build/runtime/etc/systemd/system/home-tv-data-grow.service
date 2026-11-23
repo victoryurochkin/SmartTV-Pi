@@ -1,0 +1,13 @@
+[Unit]
+Description=Проверка и расширение раздела данных HomeTV Pi
+DefaultDependencies=no
+After=systemd-udev-trigger.service
+Before=data.mount shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/home-tv/data-grow
+RemainAfterExit=yes
+TimeoutStartSec=5min
+

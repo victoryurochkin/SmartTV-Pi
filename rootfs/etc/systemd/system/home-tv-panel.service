@@ -1,0 +1,19 @@
+[Unit]
+Description=Пульт и веб-панель HomeTV Pi
+RequiresMountsFor=/data
+Requires=home-tv-state.service
+After=home-tv-state.service network.target
+
+[Service]
+User=hometv
+Group=hometv
+Environment=HOME=/data/home
+RuntimeDirectory=home-tv-panel
+RuntimeDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/lib/home-tv/panel
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
