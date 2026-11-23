@@ -51,4 +51,3 @@ if ((status > 1)); then
     exit "$status"
 fi
 resize2fs "$data"
-

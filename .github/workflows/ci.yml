@@ -1,0 +1,38 @@
+name: HomeTV Pi
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Версия образа (SemVer)
+        default: 0.1.0
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: bash build/ci-check.sh
+
+  image:
+    if: github.event_name == 'workflow_dispatch'
+    needs: checks
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Собрать образ и проверить userspace arm64
+        env:
+          HOMETV_VERSION: ${{ inputs.version }}
+        run: bash build/image.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: home-tv-pi-arm64
+          path: dist/
+          compression-level: 0
