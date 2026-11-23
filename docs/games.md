@@ -6,7 +6,7 @@
 
 | Консоль | Ядро | Входные файлы |
 | --- | --- | --- |
-| Dendy / NES / Famicom | [Nestopia UE](https://github.com/0ldsk00l/nestopia) | `.nes`, `.unf`, `.unif`. Для `.fds` нужен собственный `disksys.rom` в `/data/home/bios/nes`. Если игра идёт с неверной скоростью, выберите **Quick Menu → Core Options → System Region → Dendy**. |
+| Dendy / NES / Famicom | [Nestopia UE](https://github.com/0ldsk00l/nestopia) | `.nes`, `.unf`, `.unif`. Для `.fds` нужен собственный `disksys.rom` в `/data/home/bios/nes`. Если игра идёт с неверной скоростью, откройте **Quick Menu → Core Options**, установите **Favored System → Dendy** и запустите игру заново. |
 | Sega Mega Drive / Genesis | [Genesis Plus GX](https://github.com/libretro/Genesis-Plus-GX) | `.md`, `.gen`, `.bin`, `.smd`. Для картриджей BIOS не требуется. Ядро поставляется на некоммерческих условиях. |
 | PlayStation 1 | [PCSX ReARMed](https://github.com/libretro/pcsx_rearmed) | `.cue` вместе со всеми дорожками, `.chd`, `.pbp`, `.iso` и `.m3u` для нескольких дисков. Указывайте в CUE и M3U относительные пути к соседним файлам, текст сохраняйте в UTF‑8. |
 
