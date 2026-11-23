@@ -1,6 +1,6 @@
 [Unit]
 Description=Постоянные системные настройки HomeTV Pi
-RequiresMountsFor=/data
+RequiresMountsFor=/data /boot/firmware
 Before=NetworkManager.service bluetooth.service ssh.service home-tv-kodi.service home-tv-panel.service
 
 [Service]

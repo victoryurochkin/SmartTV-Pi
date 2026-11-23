@@ -1,0 +1,1 @@
+tvadmin ALL=(ALL:ALL) NOPASSWD: ALL

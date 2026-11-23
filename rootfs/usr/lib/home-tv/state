@@ -26,6 +26,13 @@ if [ -d /var/lib/bluetooth ]; then
 fi
 python3 /usr/lib/home-tv/hometv_state.py
 
+if ! /usr/lib/home-tv/admin --provision-ssh; then
+    echo 'Проверьте публичный ключ в /boot/firmware/hometv-ssh.pub' >&2
+fi
+if [ -s /data/system/ssh-admin ]; then
+    install -m 0440 /usr/share/home-tv/sudoers-tvadmin /etc/sudoers.d/home-tv-ssh-admin
+fi
+
 if [ -s /data/system/ssh-enabled ] && [ -s /data/ssh/tvadmin ]; then
     make_ssh_keys
     systemctl --no-block start ssh.service

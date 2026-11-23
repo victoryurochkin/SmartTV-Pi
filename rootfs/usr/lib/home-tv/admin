@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from configparser import ConfigParser
 import fcntl
+import hashlib
 from io import StringIO
 import json
 import os
@@ -11,6 +12,12 @@ import sys
 from uuid import uuid4
 
 from hometv_state import ROOT_STATE, write_atomic, write_json
+
+
+AUTHORIZED_KEYS = Path("/data/ssh/tvadmin")
+SSH_ENABLED = ROOT_STATE / "ssh-enabled"
+SSH_ADMIN = ROOT_STATE / "ssh-admin"
+SSH_PROVISION = Path("/boot/firmware/hometv-ssh.pub")
 
 
 def command(*args, timeout=25):
@@ -99,31 +106,57 @@ def timezone(request):
 
 
 def ssh_status(_):
-    return {"enabled": (ROOT_STATE / "ssh-enabled").exists()}
+    return {"enabled": SSH_ENABLED.exists(), "admin": SSH_ADMIN.exists()}
+
+
+def install_ssh_key(public_key):
+    public_key = line(public_key, 1024)
+    if not re.fullmatch(r"ssh-ed25519 [a-zA-Z0-9+/=]+(?: [^\r\n]+)?", public_key):
+        raise ValueError("Вставьте публичный ключ ssh-ed25519")
+    payload = (public_key + "\n").encode()
+    candidate = AUTHORIZED_KEYS.with_name(".tvadmin-candidate")
+    write_atomic(candidate, payload, mode=0o644)
+    try:
+        command("/usr/bin/ssh-keygen", "-l", "-f", str(candidate), timeout=5)
+        write_atomic(AUTHORIZED_KEYS, payload, mode=0o644)
+    finally:
+        candidate.unlink(missing_ok=True)
+
+
+def provision_ssh():
+    if not SSH_PROVISION.is_file():
+        return
+    with SSH_PROVISION.open("rb") as source:
+        payload = source.read(1025)
+    if len(payload) > 1024:
+        raise ValueError("Файл публичного ключа слишком большой")
+    key = payload.decode("utf-8-sig").strip()
+    marker = (hashlib.sha256(key.encode()).hexdigest() + "\n").encode()
+    if SSH_ADMIN.is_file() and SSH_ADMIN.read_bytes() == marker and AUTHORIZED_KEYS.is_file():
+        return
+    install_ssh_key(key)
+    write_atomic(SSH_ENABLED, b"enabled\n")
+    write_atomic(SSH_ADMIN, marker)
 
 
 def ssh_configure(request):
     if request.get("enabled") is False:
-        (ROOT_STATE / "ssh-enabled").unlink(missing_ok=True)
+        SSH_ENABLED.unlink(missing_ok=True)
         command("/usr/bin/systemctl", "stop", "ssh.service")
-        return {"enabled": False}
+        return ssh_status({})
     if request.get("enabled") is not True:
         raise ValueError("Укажите состояние SSH")
-    public_key = line(request.get("key"), 1024)
-    if not re.fullmatch(r"ssh-ed25519 [a-zA-Z0-9+/=]+(?: [^\r\n]+)?", public_key):
-        raise ValueError("Вставьте публичный ключ ssh-ed25519")
-    public_keys = Path("/data/ssh/tvadmin")
-    candidate = public_keys.with_name(".tvadmin-candidate")
-    write_atomic(candidate, (public_key + "\n").encode(), mode=0o644)
-    try:
-        command("/usr/bin/ssh-keygen", "-l", "-f", str(candidate), timeout=5)
-        command("/usr/lib/home-tv/state", "ssh-keys")
-        write_atomic(public_keys, candidate.read_bytes(), mode=0o644)
-        write_atomic(ROOT_STATE / "ssh-enabled", b"enabled\n")
-        command("/usr/bin/systemctl", "start", "ssh.service")
-    finally:
-        candidate.unlink(missing_ok=True)
-    return {"enabled": True}
+    key = request.get("key", "")
+    if key:
+        if SSH_ADMIN.is_file():
+            raise ValueError("Ключ администратора изменяется через hometv-ssh.pub на загрузочном разделе")
+        install_ssh_key(key)
+    if not AUTHORIZED_KEYS.is_file():
+        raise ValueError("Добавьте публичный ключ Ed25519")
+    command("/usr/lib/home-tv/state", "ssh-keys")
+    write_atomic(SSH_ENABLED, b"enabled\n")
+    command("/usr/bin/systemctl", "start", "ssh.service")
+    return ssh_status({})
 
 
 OPERATIONS = {"wifi-scan": wifi_scan, "wifi-connect": wifi_connect, "timezone": timezone,
@@ -133,7 +166,14 @@ OPERATIONS = {"wifi-scan": wifi_scan, "wifi-connect": wifi_connect, "timezone": 
 def main():
     os.umask(0o077)
     try:
-        if os.geteuid() != 0 or len(sys.argv) != 1:
+        if os.geteuid() != 0:
+            raise ValueError("Недопустимый вызов")
+        if sys.argv[1:] == ["--provision-ssh"]:
+            with (ROOT_STATE / "admin.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                provision_ssh()
+            return
+        if len(sys.argv) != 1:
             raise ValueError("Недопустимый вызов")
         raw = sys.stdin.buffer.read(4097)
         if len(raw) > 4096:
