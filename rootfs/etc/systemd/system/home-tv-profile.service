@@ -1,0 +1,13 @@
+[Unit]
+Description=Профиль платы HomeTV Pi
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/home-tv/profile
+RemainAfterExit=yes
+RuntimeDirectory=mediacenter
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target

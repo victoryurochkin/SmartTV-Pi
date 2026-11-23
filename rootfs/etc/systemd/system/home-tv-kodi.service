@@ -1,0 +1,32 @@
+[Unit]
+Description=Главный экран HomeTV Pi (Kodi GBM)
+Requires=home-tv-profile.service
+RequiresMountsFor=/data
+Wants=systemd-logind.service
+After=dbus.service systemd-logind.service systemd-user-sessions.service getty@tty1.service home-tv-profile.service
+Conflicts=getty@tty1.service
+ConditionPathExists=/dev/tty0
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=hometv
+Group=hometv
+Environment=HOME=/data/home
+EnvironmentFile=/run/mediacenter/profile.env
+WorkingDirectory=/data/home
+PAMName=home-tv
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+ExecStartPre=+/usr/bin/chvt 1
+ExecStart=/usr/lib/home-tv/kodi
+Restart=always
+RestartSec=3
+TimeoutStopSec=12
+
+[Install]
+WantedBy=graphical.target

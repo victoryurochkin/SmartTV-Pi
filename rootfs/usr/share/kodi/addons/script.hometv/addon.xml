@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="script.hometv" name="HomeTV Pi" version="0.1.0" provider-name="HomeTV Pi">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+  </requires>
+  <extension point="xbmc.python.script" library="default.py"/>
+  <extension point="xbmc.service" library="service.py"/>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="ru_RU">Главный экран HomeTV Pi</summary>
+    <summary lang="en_GB">HomeTV Pi home screen</summary>
+    <platform>linux</platform>
+  </extension>
+</addon>

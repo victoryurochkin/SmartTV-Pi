@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+umask 077
+userdata="$HOME/.kodi/userdata"
+mkdir -p "$userdata"
+
+# Apply board defaults once, before Kodi writes its persistent settings.
+if [ ! -e "$userdata/guisettings.xml" ]; then
+    settings=$(mktemp "$userdata/.guisettings.XXXXXX")
+    trap 'rm -f "$settings"' EXIT
+    cat > "$settings" <<EOF
+<settings version="2">
+  <setting id="videoscreen.limitguisize">${HOMETV_KODI_GUI_LIMIT:-3}</setting>
+  <setting id="filecache.memorysize">${HOMETV_KODI_CACHE_MIB:-20}</setting>
+</settings>
+EOF
+    ln "$settings" "$userdata/guisettings.xml"
+    rm "$settings"
+    trap - EXIT
+fi
+
+# Run Kodi itself as systemd's main process so switching away releases DRM.
+export MALLOC_MMAP_THRESHOLD_=131072
+exec /usr/lib/aarch64-linux-gnu/kodi/kodi.bin --windowing=gbm -fs

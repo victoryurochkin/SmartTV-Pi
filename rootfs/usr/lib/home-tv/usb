@@ -1,0 +1,171 @@
+#!/usr/bin/python3
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+
+DESTINATION = "org.freedesktop.UDisks2"
+BLOCK = f"{DESTINATION}.Block"
+DRIVE = f"{DESTINATION}.Drive"
+FILESYSTEM = f"{DESTINATION}.Filesystem"
+SUPPORTED_TYPES = {"vfat", "exfat", "ntfs", "ntfs3", "ext4"}
+MEDIA_PREFIXES = ("/media/hometv/", "/run/media/hometv/")
+
+
+def call(path, interface, method, *arguments, timeout=10):
+    result = subprocess.run(
+        [
+            "/usr/bin/busctl",
+            "--system",
+            "--json=short",
+            "--allow-interactive-authorization=no",
+            f"--timeout={timeout}s",
+            "call",
+            DESTINATION,
+            path,
+            interface,
+            method,
+            *arguments,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout + 1,
+    )
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip())
+    return json.loads(result.stdout)["data"] if result.stdout.strip() else []
+
+
+def prop(interfaces, interface, name, default=None):
+    return interfaces.get(interface, {}).get(name, {}).get("data", default)
+
+
+def path_from_bytes(value):
+    return os.fsdecode(bytes(value).rstrip(b"\0"))
+
+
+def devices():
+    objects, = call(
+        "/org/freedesktop/UDisks2",
+        "org.freedesktop.DBus.ObjectManager",
+        "GetManagedObjects",
+        timeout=3,
+    )
+    for path, interfaces in objects.items():
+        if FILESYSTEM not in interfaces:
+            continue
+        drive = prop(interfaces, BLOCK, "Drive", "/")
+        drive_interfaces = objects.get(drive, {})
+        if prop(drive_interfaces, DRIVE, "ConnectionBus") != "usb":
+            continue
+        yield {
+            "object": path,
+            "drive": drive,
+            "device": path_from_bytes(prop(interfaces, BLOCK, "Device", [])),
+            "label": prop(interfaces, BLOCK, "IdLabel", ""),
+            "type": prop(interfaces, BLOCK, "IdType", ""),
+            "ignored": prop(interfaces, BLOCK, "HintIgnore", True),
+            "system": prop(interfaces, BLOCK, "HintSystem", True),
+            "mounts": [
+                path_from_bytes(mount)
+                for mount in prop(interfaces, FILESYSTEM, "MountPoints", [])
+            ],
+        }
+
+
+def eligible(device):
+    return (
+        not device["ignored"]
+        and not device["system"]
+        and device["type"] in SUPPORTED_TYPES
+    )
+
+
+def list_devices():
+    mounted = []
+    for device in devices():
+        if not eligible(device):
+            continue
+        for path in device["mounts"]:
+            if path.startswith(MEDIA_PREFIXES):
+                mounted.append({
+                    "device": device["device"],
+                    "label": device["label"] or os.path.basename(path),
+                    "path": path,
+                })
+    print(json.dumps(sorted(mounted, key=lambda item: item["device"])))
+
+
+def mount_device(name):
+    if os.getuid() != 0:
+        raise RuntimeError("Монтирование запускает только системная служба.")
+    deadline = time.monotonic() + 4
+    while True:
+        device = next((item for item in devices() if item["device"] == name), None)
+        if device is not None:
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Служба UDisks не обнаружила USB-носитель.")
+        time.sleep(0.2)
+    if eligible(device) and not device["mounts"]:
+        call(
+            device["object"],
+            FILESYSTEM,
+            "Mount",
+            "a{sv}", "2", "as-user", "s", "hometv", "options", "s", "nodev,nosuid,noexec",
+            timeout=15,
+        )
+
+
+def eject_device(name):
+    connected = list(devices())
+    selected = next((item for item in connected if item["device"] == name), None)
+    if selected is None or not eligible(selected):
+        raise RuntimeError("USB-носитель недоступен.")
+    siblings = [item for item in connected if item["drive"] == selected["drive"]]
+    for device in siblings:
+        if device["mounts"] and (
+            not eligible(device)
+            or any(not mount.startswith(MEDIA_PREFIXES) for mount in device["mounts"])
+        ):
+            raise RuntimeError("Раздел носителя используется системой.")
+    for device in siblings:
+        if device["mounts"]:
+            try:
+                call(device["object"], FILESYSTEM, "Unmount", "a{sv}", "0")
+            except (RuntimeError, subprocess.TimeoutExpired) as error:
+                raise RuntimeError(
+                    "Не удалось извлечь накопитель. Закройте открытые файлы и повторите."
+                ) from error
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Управление USB-носителями HomeTV Pi")
+    subcommands = parser.add_subparsers(dest="command", required=True)
+    subcommands.add_parser("list")
+    for command in ("mount", "eject"):
+        subcommands.add_parser(command).add_argument("device")
+    args = parser.parse_args()
+    try:
+        if args.command == "list":
+            list_devices()
+        else:
+            if not re.fullmatch(r"/dev/sd[a-z]+[0-9]*", args.device):
+                raise RuntimeError("Ожидался путь к USB-носителю.")
+            if args.command == "mount":
+                mount_device(args.device)
+            else:
+                eject_device(args.device)
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+        print(f"USB: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

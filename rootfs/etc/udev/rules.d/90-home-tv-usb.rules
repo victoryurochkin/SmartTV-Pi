@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="block", SUBSYSTEMS=="usb", ENV{ID_FS_USAGE}=="filesystem", ENV{ID_FS_TYPE}=="vfat|exfat|ntfs|ntfs3|ext4", KERNEL=="sd*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="home-tv-usb@%k.service"

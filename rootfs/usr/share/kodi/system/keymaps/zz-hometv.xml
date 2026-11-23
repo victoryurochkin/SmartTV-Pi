@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<keymap>
+  <global>
+    <keyboard>
+      <home>RunAddon(script.hometv)</home>
+      <f8>RunAddon(script.hometv)</f8>
+    </keyboard>
+    <remote>
+      <start>RunAddon(script.hometv)</start>
+    </remote>
+  </global>
+</keymap>

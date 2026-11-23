@@ -1,0 +1,69 @@
+#!/bin/sh
+set -eu
+
+model_path=${1:-/proc/device-tree/model}
+profile_dir=${2:-/run/mediacenter}
+model=
+if [ -r "$model_path" ]; then
+    model=$(tr -d '\000' < "$model_path")
+fi
+
+board=generic
+width=1920
+height=1080
+renderers=2
+gui_limit=3
+cache_mib=20
+zram_mib=0
+
+case "$model" in
+    'Raspberry Pi 3 Model B'*)
+        board=pi3
+        zram_mib=384
+        ;;
+    'Raspberry Pi 4 Model B'*)
+        board=pi4
+        width=3840
+        height=2160
+        renderers=4
+        gui_limit=0
+        cache_mib=64
+        ;;
+    'Raspberry Pi 5 Model B'*)
+        board=pi5
+        width=3840
+        height=2160
+        renderers=4
+        gui_limit=0
+        cache_mib=64
+        ;;
+esac
+
+profile=$(mktemp "$profile_dir/.profile.XXXXXX")
+trap 'rm -f "$profile"' EXIT
+cat > "$profile" <<EOF
+HOMETV_BOARD=$board
+HOMETV_MAX_WIDTH=$width
+HOMETV_MAX_HEIGHT=$height
+HOMETV_CHROMIUM_RENDERERS=$renderers
+HOMETV_KODI_GUI_LIMIT=$gui_limit
+HOMETV_KODI_CACHE_MIB=$cache_mib
+HOMETV_ZRAM_MIB=$zram_mib
+EOF
+chmod 0644 "$profile"
+mv -f "$profile" "$profile_dir/profile.env"
+
+if [ "$zram_mib" -gt 0 ] && [ "$profile_dir" = /run/mediacenter ]; then
+    if ! modprobe zram || [ ! -r /sys/block/zram0/disksize ]; then
+        echo 'Не удалось загрузить модуль zram' >&2
+    elif [ "$(cat /sys/block/zram0/disksize)" = 0 ]; then
+        if zramctl --size "${zram_mib}M" /dev/zram0; then
+            if ! mkswap /dev/zram0 || ! swapon --priority 100 /dev/zram0; then
+                zramctl --reset /dev/zram0 || true
+                echo 'Не удалось включить подкачку zram' >&2
+            fi
+        else
+            echo 'Не удалось выделить устройство zram' >&2
+        fi
+    fi
+fi

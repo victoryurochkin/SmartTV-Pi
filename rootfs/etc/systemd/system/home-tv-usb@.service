@@ -1,0 +1,14 @@
+[Unit]
+Description=Монтирование USB-носителя HomeTV Pi (%I)
+Requires=udisks2.service
+After=udisks2.service
+BindsTo=dev-%i.device
+After=dev-%i.device
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/home-tv/usb mount /dev/%I
+TimeoutStartSec=25
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
