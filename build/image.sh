@@ -22,7 +22,7 @@ if [[ ! $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za
     echo 'HOMETV_VERSION должен содержать версию SemVer без префикса v.' >&2
     exit 2
 fi
-for command in docker flock git python3 xz; do
+for command in curl docker flock git python3 xz; do
     command -v "$command" >/dev/null
 done
 
@@ -95,6 +95,20 @@ install -m 0755 "$project/build/export-data-id.sh" export-image/04a-hometv-data-
 touch "$appliance_stage/EXPORT_IMAGE"
 cp -a -- "$project/rootfs" "$appliance_stage/00-appliance/rootfs"
 cp -a -- "$project/build/runtime" "$appliance_stage/00-appliance/runtime"
+locale_name=resource.language.ru_ru-11.0.106.zip
+locale_sha256=41012f12aa888795316e74a0fc9e311bebf0c916cc01d1b08583a2ff867e6974
+locale_path="$cache/$locale_name"
+locale_suffix="addons/omega/resource.language.ru_ru/$locale_name"
+if [[ ! -f $locale_path ]]; then
+    curl_options=(--fail --silent --show-error --location --ipv4 --connect-timeout 12 --max-time 25)
+    if ! curl "${curl_options[@]}" "https://mirrors.kodi.tv/$locale_suffix" -o "$run/$locale_name"; then
+        curl "${curl_options[@]}" "https://mirrors.mit.edu/kodi/$locale_suffix" -o "$run/$locale_name"
+    fi
+    printf '%s  %s\n' "$locale_sha256" "$run/$locale_name" | sha256sum --check
+    mv -- "$run/$locale_name" "$locale_path"
+fi
+printf '%s  %s\n' "$locale_sha256" "$locale_path" | sha256sum --check
+install -m 0644 "$locale_path" "$appliance_stage/00-appliance/kodi-ru.zip"
 install -m 0755 "$project/build/append-data.sh" append-data.sh
 install -m 0755 "$project/build/check-image.sh" check-image.sh
 chmod 0755 "$packages_stage/prerun.sh" "$appliance_stage/prerun.sh"
@@ -125,7 +139,7 @@ docker run --rm --privileged \
         chmod 0644 "deploy/$IMG_FILENAME.img" "deploy/$IMG_FILENAME.packages.tsv"
     ' 2>&1 | tee "$output/build.log"
 
-xz --threads=0 -3 --keep -- "$run/deploy/$img.img"
+xz --threads=0 -3 --stdout -- "$run/deploy/$img.img" > "$run/deploy/$img.img.xz"
 base_url=${HOMETV_RELEASE_URL:-https://github.com/victoryurochkin/SmartTV-Pi/releases/download/v$version}
 python3 "$project/build/manifest.py" "$run/deploy/$img.img" "$version" "$base_url"
 for file in "$img.img.xz" "$img.img.sha256" "$img.img.xz.sha256" "$img.packages.tsv" os-list.json; do

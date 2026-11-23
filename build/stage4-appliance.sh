@@ -1,6 +1,11 @@
 #!/bin/bash -e
 
 rm -f "$ROOTFS_DIR/etc/hometv-build-packages"
+install -m 0600 kodi-ru.zip "$ROOTFS_DIR/root/home-tv-kodi-ru.zip"
+on_chroot <<'CHROOT'
+unzip -qo /root/home-tv-kodi-ru.zip -d /usr/share/kodi/addons
+rm -f /root/home-tv-kodi-ru.zip
+CHROOT
 for source in runtime rootfs; do
     rsync -rltp --chown=root:root --chmod=D0755,F0644 "$source/" "$ROOTFS_DIR/"
     while IFS= read -r -d '' path; do

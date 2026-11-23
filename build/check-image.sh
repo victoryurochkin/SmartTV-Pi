@@ -55,9 +55,11 @@ test -x "$root/usr/lib/home-tv/data-grow"
 test -x "$root/usr/bin/kodi"
 test -x "$root/usr/lib/aarch64-linux-gnu/kodi/kodi.bin"
 test -x "$root/usr/bin/chromium"
+test -f "$root/usr/share/kodi/addons/resource.language.ru_ru/addon.xml"
+grep -Fq '<addon>resource.language.ru_ru</addon>' "$root/usr/share/kodi/system/addon-manifest.xml"
 systemctl --root="$root" is-enabled --quiet home-tv-kodi.service
 chroot "$root" /usr/bin/python3 -B -c 'import platform, ssl; assert platform.machine() == "aarch64"'
 chroot "$root" /usr/sbin/visudo -c -q
 dpkg-query --admindir="$root/var/lib/dpkg" -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${Architecture}\n' |
     awk -F '\t' '$1 ~ /^ii/ {print $2 "\t" $3 "\t" $4}' | sort > "${image%.img}.packages.tsv"
-printf 'Проверены разметка, файлы загрузки и базовый запуск userspace arm64 через QEMU.\n'
+printf 'Проверены разметка, файлы загрузки и базовый запуск userspace arm64.\n'
