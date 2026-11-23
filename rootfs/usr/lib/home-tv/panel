@@ -200,7 +200,7 @@ class Panel(ThreadingHTTPServer):
                 self.device = InputDevice(name="HomeTV Phone")
                 time.sleep(0.2)
             if action == "home":
-                self.device.key("f8")
+                self.device.key("home")
             elif action == "key" and data.get("key") in KEY_NAMES:
                 self.device.key(data["key"])
             elif action == "move" and all(type(data.get(axis)) is int and -250 <= data[axis] <= 250 for axis in ("x", "y")):

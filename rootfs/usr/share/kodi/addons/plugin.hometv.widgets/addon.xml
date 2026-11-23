@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="plugin.hometv.widgets" name="HomeTV Pi" version="0.1.0" provider-name="HomeTV Pi">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0" />
+    <import addon="script.hometv" version="0.1.0" />
+  </requires>
+  <extension point="xbmc.python.pluginsource" library="default.py">
+    <provides>video</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <platform>linux</platform>
+    <summary lang="ru_RU">Плитки HomeTV Pi для главного экрана Kodi</summary>
+    <summary lang="en_GB">HomeTV Pi tiles for the Kodi home screen</summary>
+  </extension>
+</addon>

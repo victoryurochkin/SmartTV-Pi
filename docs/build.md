@@ -22,11 +22,11 @@ wsl -d Ubuntu --cd /mnt/d/Projects/SmartTV -- bash build/image.sh
 
 ## Результат сборки
 
-Ниже приведены имена файлов для `HOMETV_VERSION=0.1.0`.
+Ниже приведены имена файлов для `HOMETV_VERSION=0.2.0`.
 
-- `HomeTV-Pi-0.1.0-arm64.img.xz` для Raspberry Pi Imager.
-- `HomeTV-Pi-0.1.0-arm64.img.xz.sha256` для проверки скачанного файла и `HomeTV-Pi-0.1.0-arm64.img.sha256` для проверки распакованного образа.
-- `HomeTV-Pi-0.1.0-arm64.packages.tsv` со списком пакетов и версий.
+- `HomeTV-Pi-0.2.0-arm64.img.xz` для Raspberry Pi Imager.
+- `HomeTV-Pi-0.2.0-arm64.img.xz.sha256` для проверки скачанного файла и `HomeTV-Pi-0.2.0-arm64.img.sha256` для проверки распакованного образа.
+- `HomeTV-Pi-0.2.0-arm64.packages.tsv` со списком пакетов и версий.
 - `os-list.json` и `hometv-icon.svg` для каталога Imager.
 - `build.log` с журналом Docker и `pi-gen`.
 

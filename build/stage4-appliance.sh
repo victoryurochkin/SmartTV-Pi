@@ -35,16 +35,19 @@ sed -i -e 's/ resize\b//' -e 's/^/overlayroot=tmpfs:recurse=0 /' "$ROOTFS_DIR/bo
 printf '\n[pi4]\nhdmi_enable_4kp60=1\n\n[all]\ndtparam=watchdog=on\n' >> "$ROOTFS_DIR/boot/firmware/config.txt"
 manifest="$ROOTFS_DIR/usr/share/kodi/system/addon-manifest.xml"
 grep -q '</addons>' "$manifest"
-for addon in script.hometv resource.language.ru_ru; do
+for addon in script.hometv plugin.hometv.widgets resource.language.ru_ru; do
     if [[ -f $ROOTFS_DIR/usr/share/kodi/addons/$addon/addon.xml ]] && ! grep -Fq ">$addon<" "$manifest"; then
         sed -i "/<\\/addons>/i\\    <addon>$addon</addon>" "$manifest"
     fi
 done
+install -m 0644 add-estuary-menu.py "$ROOTFS_DIR/root/hometv-add-estuary-menu.py"
 
 printf '\noverlay\n' >> "$ROOTFS_DIR/etc/initramfs-tools/modules"
 sed -i -e 's/^# *ru_RU.UTF-8 UTF-8$/ru_RU.UTF-8 UTF-8/' -e 's/^# *en_US.UTF-8 UTF-8$/en_US.UTF-8 UTF-8/' "$ROOTFS_DIR/etc/locale.gen"
 ln -sfn /usr/share/zoneinfo/Etc/UTC "$ROOTFS_DIR/etc/localtime"
 on_chroot <<'CHROOT'
+python3 /root/hometv-add-estuary-menu.py /
+rm -f /root/hometv-add-estuary-menu.py
 usermod --home /data/home --shell /usr/sbin/nologin --password '!' --groups audio,video,render,input,plugdev,netdev hometv
 passwd --lock root
 test "$(id -u hometv):$(id -g hometv)" = 1000:1000

@@ -55,7 +55,12 @@ test -x "$root/usr/lib/home-tv/data-grow"
 test -x "$root/usr/bin/kodi"
 test -x "$root/usr/lib/aarch64-linux-gnu/kodi/kodi.bin"
 test -x "$root/usr/bin/chromium"
+for game in lbreakouthd sgt-bridges sgt-fifteen sgt-lightup sgt-mines sgt-solo; do
+    test -x "$root/usr/games/$game"
+done
 test -f "$root/usr/share/kodi/addons/resource.language.ru_ru/addon.xml"
+test -f "$root/usr/share/kodi/addons/plugin.hometv.widgets/addon.xml"
+grep -Fq 'plugin://plugin.hometv.widgets/services/' "$root/usr/share/kodi/addons/skin.estuary/xml/Home.xml"
 grep -Fq '<addon>resource.language.ru_ru</addon>' "$root/usr/share/kodi/system/addon-manifest.xml"
 systemctl --root="$root" is-enabled --quiet home-tv-kodi.service
 chroot "$root" /usr/bin/python3 -B -c 'import platform, ssl; assert platform.machine() == "aarch64"'

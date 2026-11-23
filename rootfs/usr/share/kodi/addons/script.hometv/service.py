@@ -15,7 +15,7 @@ def main():
         setup_wizard()
     except (OSError, ValueError):
         xbmc.log("HomeTV: could not open the setup wizard", xbmc.LOGWARNING)
-    xbmc.executebuiltin("RunAddon(script.hometv)")
+    xbmc.executebuiltin("ActivateWindow(Home)")
     previous = None
     while not monitor.abortRequested():
         try:

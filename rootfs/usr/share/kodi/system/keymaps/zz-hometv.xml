@@ -2,11 +2,11 @@
 <keymap>
   <global>
     <keyboard>
-      <home>RunAddon(script.hometv)</home>
+      <home>ActivateWindow(Home)</home>
       <f8>RunAddon(script.hometv)</f8>
     </keyboard>
     <remote>
-      <start>RunAddon(script.hometv)</start>
+      <start>ActivateWindow(Home)</start>
     </remote>
   </global>
 </keymap>

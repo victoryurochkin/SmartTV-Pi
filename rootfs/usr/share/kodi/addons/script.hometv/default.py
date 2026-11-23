@@ -1,12 +1,14 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import xbmc
 import xbmcaddon
 import xbmcgui
 
-from common import run, show_error, tr, usb_drives
+from common import run, russian, show_error, tr, usb_drives
+from hometv_games import GAMES
 from hometv_state import CONFIG, check_pin, read_json
 from hometv_streaming import load_catalogue
 from setup import audio_menu, bluetooth_menu, panel_url, select_wifi, set_pin
@@ -89,7 +91,8 @@ def device_settings():
 def unlocked(action):
     try:
         locked = (read_json(CONFIG / "parental.json", {}) or {}).get("locked", [])
-        if action.removeprefix("web:") not in locked:
+        gate = action.removeprefix("web:").replace("game:", "game-", 1)
+        if gate not in locked and not (action.startswith("game:") and "games" in locked):
             return True
         pin = DIALOG.input(tr("PIN для открытия плитки", "Tile PIN"), option=xbmcgui.ALPHANUM_HIDE_INPUT)
         if check_pin(pin, read_json(CONFIG / "pin.json")):
@@ -98,6 +101,51 @@ def unlocked(action):
         pass
     show_error(tr("Плитка закрыта", "Tile locked"))
     return False
+
+
+def start_external(command, identifier):
+    try:
+        run("/usr/lib/home-tv/session", command, identifier, timeout=18)
+    except (OSError, subprocess.SubprocessError):
+        show_error(tr("Не удалось запустить приложение", "Could not start the application"))
+
+
+def select_game():
+    field = "name_ru" if russian() else "name_en"
+    names = list(GAMES)
+    choice = DIALOG.select(tr("Игры HomeTV Pi", "HomeTV Pi games"),
+                           [GAMES[name][field] for name in names])
+    if choice >= 0:
+        launch(f"game:{names[choice]}")
+
+
+def launch(action, close=None):
+    if not unlocked(action):
+        return
+    if action.startswith("web:"):
+        start_external("open", action.removeprefix("web:"))
+        return
+    if action.startswith("game:"):
+        start_external("game", action.removeprefix("game:"))
+        return
+    if action == "games":
+        select_game()
+        return
+    if action == "phone":
+        panel_url()
+        return
+    if close is not None:
+        close()
+    if action == "settings":
+        device_settings()
+    elif action in {"usb", "eject"}:
+        choose_usb(eject=action == "eject")
+    else:
+        windows = {"files": "Videos,files", "library": "Videos,videodb://movies/titles/",
+                   "music": "Music", "photos": "Pictures", "tv": "TVChannels",
+                   "retrogames": "Games"}
+        if action in windows:
+            xbmc.executebuiltin(f"ActivateWindow({windows[action]})")
 
 
 class Home(xbmcgui.WindowXMLDialog):
@@ -109,6 +157,7 @@ class Home(xbmcgui.WindowXMLDialog):
             (tr("Музыка", "Music"), tr("Альбомы и плейлисты", "Albums and playlists"), "music"),
             (tr("Фото", "Photos"), tr("Папки и слайд-шоу", "Folders and slideshows"), "photos"),
             (tr("Телевидение", "Live TV"), "IPTV / EPG", "tv"),
+            (tr("Игры", "Games"), tr("Аркады и головоломки", "Arcade and puzzles"), "games"),
             (tr("Извлечь USB", "Eject USB"), tr("Отключение диска", "Safe removal"), "eject"),
             (tr("Пульт на телефоне", "Phone remote"), "QR", "phone"),
             (tr("Настройки", "Settings"), "HomeTV Pi", "settings"),
@@ -136,30 +185,13 @@ class Home(xbmcgui.WindowXMLDialog):
         index = self.panel.getSelectedPosition()
         if not 0 <= index < len(self.tiles):
             return
-        action = self.tiles[index][2]
-        if not unlocked(action):
-            return
-        if action.startswith("web:"):
-            try:
-                run("/usr/lib/home-tv/session", "open", action.removeprefix("web:"), timeout=15)
-            except (OSError, subprocess.SubprocessError):
-                show_error(tr("Не удалось открыть сервис", "Could not open the service"))
-            return
-        if action == "phone":
-            panel_url()
-            return
-        if action == "settings":
-            self.close()
-            device_settings()
-            return
-        self.close()
-        if action in {"usb", "eject"}:
-            choose_usb(eject=action == "eject")
-            return
-        windows = {"files": "Videos,files", "library": "Videos,videodb://movies/titles/",
-                   "music": "Music", "photos": "Pictures", "tv": "TVChannels"}
-        xbmc.executebuiltin(f"ActivateWindow({windows[action]})")
+        launch(self.tiles[index][2], self.close)
 
 
 if __name__ == "__main__":
-    Home("HomeTV.xml", ADDON.getAddonInfo("path"), "default", "720p").doModal()
+    action = next((argument.removeprefix("action=") for argument in sys.argv[1:]
+                   if argument.startswith("action=")), "")
+    if action:
+        launch(action)
+    else:
+        Home("HomeTV.xml", ADDON.getAddonInfo("path"), "default", "720p").doModal()

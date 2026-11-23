@@ -5,7 +5,7 @@ project=$(cd -- "$(dirname -- "$0")/.." && pwd)
 pigen_commit=c0d2c9f2cffc08bc56850b0a3eb23178f4226e8a
 builder_base=docker.io/library/debian:trixie@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
 builder="hometv-pigen:${pigen_commit:0:12}"
-version=${HOMETV_VERSION:-0.1.0}
+version=${HOMETV_VERSION:-0.2.0}
 cache=${HOMETV_BUILD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/hometv-pi}
 output=${HOMETV_OUTPUT:-$project/dist}
 reuse=0
@@ -91,6 +91,7 @@ if ((reuse)) && [[ -f $base/$packages_stage/rootfs/etc/hometv-build-packages ]] 
     touch "$packages_stage/SKIP"
 fi
 install -m 0755 "$project/build/stage4-appliance.sh" "$appliance_stage/00-appliance/00-run.sh"
+install -m 0644 "$project/build/add-estuary-menu.py" "$appliance_stage/00-appliance/add-estuary-menu.py"
 install -m 0755 "$project/build/export-data-id.sh" export-image/04a-hometv-data-id/00-run.sh
 touch "$appliance_stage/EXPORT_IMAGE"
 cp -a -- "$project/rootfs" "$appliance_stage/00-appliance/rootfs"
