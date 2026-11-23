@@ -1,11 +1,12 @@
 #!/usr/bin/python3
-"""Run a single official service in Chromium under Cage."""
+"""Run one streaming service or installed game under Cage."""
 
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+from hometv_games import game_session
 from hometv_state import CONFIG, read_json
 from hometv_streaming import ALLOWED_FLAGS, load_catalogue, validate_service_id
 
@@ -36,29 +37,39 @@ def browser_command(service, profile, runtime, renderers):
     return command
 
 
-def main():
-    service_id = SELECTION.read_text(encoding='ascii').strip()
+def streaming_session(service_id, home):
     if not validate_service_id(service_id):
         raise ValueError('Некорректный идентификатор сервиса')
     service = load_catalogue().get(service_id)
     if service is None:
         raise ValueError('Сервис отсутствует в каталоге')
 
-    profile = Path(os.environ['HOME']) / '.local/share/home-tv/browser' / service_id
+    profile = home / '.local/share/home-tv/browser' / service_id
     profile.mkdir(mode=0o700, parents=True, exist_ok=True)
     runtime = Path(os.environ['XDG_RUNTIME_DIR'])
     renderers = int(os.environ.get('HOMETV_CHROMIUM_RENDERERS', '2'))
     if not 1 <= renderers <= 8:
         raise ValueError('Некорректный лимит процессов Chromium')
+    return browser_command(service, profile, runtime, renderers), os.environ.copy(), home
+
+
+def main():
+    selection = SELECTION.read_text(encoding='ascii').strip()
+    game_id = selection.removeprefix('game:')
+    home = Path(os.environ['HOME'])
+    if game_id != selection:
+        command, environment, directory = game_session(game_id, home)
+    else:
+        command, environment, directory = streaming_session(selection, home)
     settings = read_json(CONFIG / 'setup.json', {}) or {}
     if settings.get('keyboard') == 'us,ru':
-        os.environ['XKB_DEFAULT_LAYOUT'] = 'us,ru'
-        os.environ['XKB_DEFAULT_OPTIONS'] = 'grp:alt_shift_toggle'
-    command = browser_command(service, profile, runtime, renderers)
-    completed = subprocess.run(['/usr/bin/dbus-run-session', '--', *command], check=False)
-    print(f'Графическая сессия Chromium завершилась ({completed.returncode}). Возврат в Kodi.',
+        environment['XKB_DEFAULT_LAYOUT'] = 'us,ru'
+        environment['XKB_DEFAULT_OPTIONS'] = 'grp:alt_shift_toggle'
+    completed = subprocess.run(['/usr/bin/dbus-run-session', '--', *command], check=False,
+                               env=environment, cwd=directory)
+    print(f'Графическая сессия завершилась ({completed.returncode}). Возврат в Kodi.',
           file=sys.stderr)
-    # The recovery unit also handles a normal browser window close. An explicit
+    # The recovery unit also handles a normal window close. An explicit
     # systemd stop sends SIGTERM to the wrapper and bypasses this exit path.
     return 1
 

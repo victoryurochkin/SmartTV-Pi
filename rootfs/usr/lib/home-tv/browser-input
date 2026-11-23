@@ -17,6 +17,7 @@ from pathlib import Path
 
 from evdev import InputDevice as EvdevDevice, UInputError, ecodes, list_devices
 
+from hometv_games import GAMES
 from hometv_input import KEY_CODES, InputDevice
 
 
@@ -46,12 +47,18 @@ CEC_KEYS = {
     0x45: ecodes.KEY_STOPCD,
     0x46: ecodes.KEY_PLAYPAUSE,
     0x71: ecodes.KEY_BLUE,
+    0x72: ecodes.KEY_RED,
+    0x73: ecodes.KEY_GREEN,
+    0x74: ecodes.KEY_YELLOW,
 }
+for digit in range(10):
+    CEC_KEYS[0x20 + digit] = ecodes.ecodes[f'KEY_{digit}']
 CEC_PRESS = re.compile(rb'key pressed: [^\r\n]+ \(([0-9a-fA-F]{1,2}), 0\)\s*$')
 SPECIAL_ACTIONS = {
     ecodes.KEY_F12: 'home', ecodes.KEY_HOMEPAGE: 'home', ecodes.KEY_HOME: 'home',
     ecodes.KEY_F9: 'mode', ecodes.KEY_BLUE: 'mode',
     ecodes.KEY_OK: 'ok', ecodes.KEY_ENTER: 'ok',
+    ecodes.KEY_YELLOW: 'secondary',
 }
 
 
@@ -75,10 +82,10 @@ def setup_configuration():
         raise ValueError('cec_enabled должен иметь значение true или false')
     keymap = config.get('keymap', {})
     if not isinstance(keymap, dict) or any(
-        name not in ecodes.ecodes or action not in ('home', 'mode', 'ok', 'back')
+        name not in ecodes.ecodes or action not in ('home', 'mode', 'ok', 'back', 'secondary')
         for name, action in keymap.items()
     ):
-        raise ValueError('keymap принимает коды evdev для действий home, mode, ok и back')
+        raise ValueError('keymap принимает коды evdev для действий home, mode, ok, back и secondary')
     return config.get('cec_enabled', True), adapter, [name.lower() for name in names], {
         ecodes.ecodes[name]: action for name, action in keymap.items()
     }
@@ -138,7 +145,11 @@ class BrowserInput:
     def __init__(self, output, keymap):
         self.output = output
         self.keymap = SPECIAL_ACTIONS | keymap
-        self.pointer_mode = CURRENT_SERVICE.read_text(encoding='ascii').strip() != 'youtube-tv'
+        selection = CURRENT_SERVICE.read_text(encoding='ascii').strip()
+        game_id = selection.removeprefix('game:')
+        self.game = GAMES.get(game_id) if game_id != selection else None
+        puzzle = self.game is not None and self.game['toolkit'] == 'gtk'
+        self.pointer_mode = not puzzle and selection != 'youtube-tv'
         self.next_home = 0.0
         self.next_toggle = 0.0
 
@@ -165,6 +176,11 @@ class BrowserInput:
                 self.output.click()
             else:
                 self.output.key('enter')
+        elif remote and action == 'secondary' and pressed == 1 and self.game:
+            if self.pointer_mode:
+                self.output.click('right')
+            else:
+                self.output.key('space')
         elif remote and action == 'back':
             self.output.key('back')
         elif remote and self.pointer_mode and code in MOTION:

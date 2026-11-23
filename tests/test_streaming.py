@@ -13,6 +13,7 @@ ROOTFS = Path(__file__).resolve().parents[1] / 'rootfs'
 APP = ROOTFS / 'usr/lib/home-tv'
 sys.path.insert(0, str(APP))
 
+from hometv_games import GAMES, game_session
 from hometv_streaming import validate_catalogue
 
 
@@ -78,6 +79,33 @@ class StreamingTests(unittest.TestCase):
                     session.switch(['open', 'youtube-tv'])
             self.assertEqual(selection.read_text(encoding='ascii'), 'youtube-tv\n')
             self.assertEqual([call.args[0] for call in start.call_args_list], [session.BROWSER, session.KODI])
+
+    def test_native_games_use_installed_binaries_and_separate_profiles(self):
+        session = load_program('session')
+        required = {'solo', 'fifteen', 'bridges', 'lightup', 'mines'}
+        self.assertTrue(required <= GAMES.keys())
+        self.assertEqual(session.selection_from_command(['open', 'youtube-tv']), 'youtube-tv')
+        for bad_command in (['game', '../browser'], ['game', 'netflix'], ['open', 'game:solo'],
+                            ['game', 'solo', '--anything']):
+            with self.subTest(bad_command=bad_command), self.assertRaises(ValueError):
+                session.selection_from_command(bad_command)
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            for game_id in required:
+                self.assertEqual(session.selection_from_command(['game', game_id]), f'game:{game_id}')
+                command, environment, game_home = game_session(game_id, home)
+                self.assertEqual(command, ['/usr/bin/cage', '--', f'/usr/games/sgt-{game_id}'])
+                self.assertTrue(game_home.is_dir())
+                self.assertEqual(game_home, home / '.local/share/home-tv/games' / game_id)
+                self.assertEqual(environment['HOME'], str(game_home))
+                self.assertEqual(environment['XDG_CONFIG_HOME'], str(game_home / 'config'))
+                self.assertEqual(environment['GDK_BACKEND'], 'wayland')
+            command, environment, game_home = game_session('lbreakouthd', home)
+            self.assertEqual(command, ['/usr/bin/cage', '--', '/usr/bin/setpriv', '--no-new-privs',
+                                       '--', '/usr/games/lbreakouthd'])
+            self.assertEqual(environment['HOME'], str(game_home))
+            self.assertEqual(environment['SDL_VIDEODRIVER'], 'wayland')
 
     def test_browser_unit_excludes_kodi_and_has_exit_recovery(self):
         source = (ROOTFS / 'etc/systemd/system/home-tv-browser.service').read_text(encoding='utf-8')

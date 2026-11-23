@@ -16,6 +16,7 @@ kbd
 kmod
 kodi
 kodi-pvr-iptvsimple
+lbreakouthd
 libgl1-mesa-dri
 libpam-systemd
 libspa-0.2-bluetooth
@@ -33,6 +34,7 @@ python3-evdev
 python3-pil
 python3-qrcode
 seatd
+sgt-puzzles
 smbclient
 sudo
 udisks2
