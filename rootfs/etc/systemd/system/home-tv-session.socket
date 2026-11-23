@@ -1,0 +1,11 @@
+[Unit]
+Description=HomeTV Pi session control socket
+
+[Socket]
+ListenStream=/run/home-tv-session.sock
+SocketGroup=hometv
+SocketMode=0660
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

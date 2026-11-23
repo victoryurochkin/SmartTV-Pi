@@ -1,8 +1,12 @@
 import json
 import subprocess
+import sys
 
 import xbmc
 import xbmcgui
+
+
+sys.path.insert(0, "/usr/lib/home-tv")
 
 
 def russian():

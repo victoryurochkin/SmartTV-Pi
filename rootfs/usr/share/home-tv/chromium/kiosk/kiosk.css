@@ -1,0 +1,4 @@
+:root:not([data-hometv-pointer]) *,
+:root:not([data-hometv-pointer]) {
+    cursor: none !important;
+}

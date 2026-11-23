@@ -1,0 +1,66 @@
+#!/usr/bin/python3
+"""Run a single official service in Chromium under Cage."""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from hometv_streaming import ALLOWED_FLAGS, load_catalogue, validate_service_id
+
+
+SELECTION = Path('/run/home-tv-session/service-id')
+EXTENSIONS = Path('/usr/share/home-tv/chromium')
+
+
+def browser_command(service, profile, runtime, renderers):
+    extensions = [EXTENSIONS / 'kiosk']
+    if service.get('prefer_h264', False):
+        extensions.append(EXTENSIONS / 'youtube-h264')
+
+    command = [
+        '/usr/bin/cage', '--', '/usr/bin/chromium',
+        '--ozone-platform=wayland', '--kiosk', '--no-first-run',
+        '--no-default-browser-check', '--disable-session-crashed-bubble',
+        f'--user-data-dir={profile}', f'--disk-cache-dir={runtime / "cache"}',
+        f'--disk-cache-size={24 * 1024 * 1024 if renderers <= 2 else 64 * 1024 * 1024}',
+        f'--renderer-process-limit={renderers}',
+        f'--force-device-scale-factor={service.get("zoom", 1.0)}',
+        '--load-extension=' + ','.join(map(str, extensions)),
+    ]
+    if service.get('user_agent'):
+        command.append(f'--user-agent={service["user_agent"]}')
+    command.extend(ALLOWED_FLAGS[flag] for flag in dict.fromkeys(service.get('flags', [])))
+    command.append(service['url'])
+    return command
+
+
+def main():
+    service_id = SELECTION.read_text(encoding='ascii').strip()
+    if not validate_service_id(service_id):
+        raise ValueError('Некорректный идентификатор сервиса')
+    service = load_catalogue().get(service_id)
+    if service is None:
+        raise ValueError('Сервис отсутствует в каталоге')
+
+    profile = Path(os.environ['HOME']) / '.local/share/home-tv/browser' / service_id
+    profile.mkdir(mode=0o700, parents=True, exist_ok=True)
+    runtime = Path(os.environ['XDG_RUNTIME_DIR'])
+    renderers = int(os.environ.get('HOMETV_CHROMIUM_RENDERERS', '2'))
+    if not 1 <= renderers <= 8:
+        raise ValueError('Некорректный лимит процессов Chromium')
+    command = browser_command(service, profile, runtime, renderers)
+    completed = subprocess.run(['/usr/bin/dbus-run-session', '--', *command], check=False)
+    print(f'Графическая сессия Chromium завершилась ({completed.returncode}). Возврат в Kodi.',
+          file=sys.stderr)
+    # The recovery unit also handles a normal browser window close. An explicit
+    # systemd stop sends SIGTERM to the wrapper and bypasses this exit path.
+    return 1
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (KeyError, OSError, ValueError) as error:
+        print(error, file=sys.stderr)
+        sys.exit(1)

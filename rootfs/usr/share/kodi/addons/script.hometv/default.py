@@ -7,6 +7,7 @@ import xbmcaddon
 import xbmcgui
 
 from common import run, show_error, tr, usb_drives
+from hometv_streaming import load_catalogue
 
 
 ADDON = xbmcaddon.Addon()
@@ -74,7 +75,7 @@ def choose_usb(eject=False):
 
 class Home(xbmcgui.WindowXMLDialog):
     def onInit(self):
-        self.tiles = [
+        local = [
             (tr("Видео и музыка", "Video and music"), tr("Файлы и сеть", "Files and network"), "files"),
             ("USB", tr("Подключённые диски", "Connected drives"), "usb"),
             (tr("Библиотека", "Library"), tr("Фильмы и сериалы", "Movies and TV shows"), "library"),
@@ -84,6 +85,15 @@ class Home(xbmcgui.WindowXMLDialog):
             (tr("Извлечь USB", "Eject USB"), tr("Безопасное отключение", "Safe removal"), "eject"),
             (tr("Настройки", "Settings"), "Kodi", "settings"),
         ]
+        try:
+            web = [(entry["name"], entry.get("quality_note") or tr("Веб-сервис", "Web service"),
+                    f"web:{service_id}") for service_id, entry in load_catalogue().items()]
+        except (OSError, ValueError):
+            web = []
+            show_error(tr("Проверьте файл services.json", "Check services.json"))
+        featured = [tile for key in ("web:youtube-tv", "web:ivi", "web:kion", "web:netflix")
+                    for tile in web if tile[2] == key]
+        self.tiles = [*local[:1], *featured, *local[1:], *(tile for tile in web if tile not in featured)]
         self.panel = self.getControl(100)
         self.panel.reset()
         self.panel.addItems([xbmcgui.ListItem(label, detail) for label, detail, _ in self.tiles])
@@ -97,6 +107,12 @@ class Home(xbmcgui.WindowXMLDialog):
         if not 0 <= index < len(self.tiles):
             return
         action = self.tiles[index][2]
+        if action.startswith("web:"):
+            try:
+                run("/usr/lib/home-tv/session", "open", action.removeprefix("web:"), timeout=15)
+            except (OSError, subprocess.SubprocessError):
+                show_error(tr("Не удалось открыть сервис", "Could not open the service"))
+            return
         self.close()
         if action in {"usb", "eject"}:
             choose_usb(eject=action == "eject")

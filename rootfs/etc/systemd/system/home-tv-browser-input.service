@@ -1,0 +1,18 @@
+[Unit]
+Description=HomeTV Pi Chromium remote input bridge
+BindsTo=home-tv-browser.service
+PartOf=home-tv-browser.service
+After=home-tv-browser.service
+
+[Service]
+Type=exec
+User=hometv
+Group=hometv
+Environment=HOME=/data/home
+ExecStart=/usr/lib/home-tv/browser-input
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=3s

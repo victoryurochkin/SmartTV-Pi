@@ -1,0 +1,263 @@
+#!/usr/bin/python3
+"""Translate remote controls into a virtual pointer or keyboard during Chromium."""
+
+import contextlib
+import json
+import os
+import queue
+import re
+import select
+import selectors
+import signal
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+from evdev import InputDevice as EvdevDevice, UInputError, ecodes, list_devices
+
+from hometv_input import KEY_CODES, InputDevice
+
+
+SESSION = '/usr/lib/home-tv/session'
+CURRENT_SERVICE = Path('/run/home-tv-session/service-id')
+SETUP = Path('/data/config/input.json')
+POINTER_STEP = 18
+MOTION = {
+    ecodes.KEY_UP: (0, -POINTER_STEP),
+    ecodes.KEY_DOWN: (0, POINTER_STEP),
+    ecodes.KEY_LEFT: (-POINTER_STEP, 0),
+    ecodes.KEY_RIGHT: (POINTER_STEP, 0),
+}
+CEC_KEYS = {
+    0x00: ecodes.KEY_OK,       # Select
+    0x01: ecodes.KEY_UP,
+    0x02: ecodes.KEY_DOWN,
+    0x03: ecodes.KEY_LEFT,
+    0x04: ecodes.KEY_RIGHT,
+    0x09: ecodes.KEY_HOMEPAGE, # Root Menu
+    0x0D: ecodes.KEY_ESC,      # Exit
+    0x2B: ecodes.KEY_OK,       # Enter
+    0x41: ecodes.KEY_VOLUMEUP,
+    0x42: ecodes.KEY_VOLUMEDOWN,
+    0x43: ecodes.KEY_MUTE,
+    0x44: ecodes.KEY_PLAYPAUSE,
+    0x45: ecodes.KEY_STOPCD,
+    0x46: ecodes.KEY_PLAYPAUSE,
+    0x71: ecodes.KEY_BLUE,
+}
+CEC_PRESS = re.compile(rb'key pressed: [^\r\n]+ \(([0-9a-fA-F]{1,2}), 0\)\s*$')
+SPECIAL_ACTIONS = {
+    ecodes.KEY_F12: 'home', ecodes.KEY_HOMEPAGE: 'home', ecodes.KEY_HOME: 'home',
+    ecodes.KEY_F9: 'mode', ecodes.KEY_BLUE: 'mode',
+    ecodes.KEY_OK: 'ok', ecodes.KEY_ENTER: 'ok',
+}
+
+
+def setup_configuration():
+    try:
+        config = json.loads(SETUP.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        config = {}
+    if not isinstance(config, dict):
+        raise ValueError('Некорректный файл input.json')
+    names = config.get('remote_devices', ['Flirc'])
+    if not isinstance(names, list) or any(not isinstance(name, str) or not name for name in names):
+        raise ValueError('remote_devices должен содержать фрагменты имён пультов')
+    adapter = config.get('cec_adapter')
+    if adapter is not None and (
+        not isinstance(adapter, str) or not re.fullmatch(r'/dev/[a-zA-Z0-9_./:-]{1,120}', adapter)
+        or '..' in Path(adapter).parts
+    ):
+        raise ValueError('cec_adapter должен быть путём к устройству в /dev')
+    if not isinstance(config.get('cec_enabled', True), bool):
+        raise ValueError('cec_enabled должен иметь значение true или false')
+    keymap = config.get('keymap', {})
+    if not isinstance(keymap, dict) or any(
+        name not in ecodes.ecodes or action not in ('home', 'mode', 'ok', 'back')
+        for name, action in keymap.items()
+    ):
+        raise ValueError('keymap принимает коды evdev для действий home, mode, ok и back')
+    return config.get('cec_enabled', True), adapter, [name.lower() for name in names], {
+        ecodes.ecodes[name]: action for name, action in keymap.items()
+    }
+
+
+def cec_key(line):
+    match = CEC_PRESS.search(line)
+    return CEC_KEYS.get(int(match.group(1), 16)) if match else None
+
+
+def monitor_cec(stop, pending, adapter):
+    # Trixie ships cec-client without Python bindings. Listen to its libCEC
+    # key events and ignore other debugging output, including raw bus frames.
+    command = ['/usr/bin/cec-client', '-d', '31', '-t', 'r', '-o', 'HomeTV Pi']
+    if adapter:
+        command.append(adapter)
+
+    while not stop.is_set():
+        try:
+            client = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      stderr=subprocess.DEVNULL)
+        except OSError as error:
+            print(f'CEC недоступен: {error}', file=sys.stderr, flush=True)
+            return
+        try:
+            client.stdin.write(b'as\n')
+            client.stdin.flush()
+            buffer = b''
+            while not stop.is_set():
+                ready, _, _ = select.select([client.stdout], [], [], 0.25)
+                if not ready:
+                    continue
+                chunk = os.read(client.stdout.fileno(), 4096)
+                if not chunk:
+                    break
+                *lines, buffer = (buffer + chunk).split(b'\n')
+                for line in lines:
+                    key = cec_key(line)
+                    if key is not None:
+                        pending.put(key)
+        except BrokenPipeError:
+            pass
+        finally:
+            if client.poll() is None:
+                client.terminate()
+            try:
+                client.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                client.kill()
+                client.wait()
+            client.stdin.close()
+            client.stdout.close()
+        stop.wait(5)
+
+
+class BrowserInput:
+    def __init__(self, output, keymap):
+        self.output = output
+        self.keymap = SPECIAL_ACTIONS | keymap
+        self.pointer_mode = CURRENT_SERVICE.read_text(encoding='ascii').strip() != 'youtube-tv'
+        self.next_home = 0.0
+        self.next_toggle = 0.0
+
+    def key(self, code, pressed, remote):
+        if pressed not in (1, 2):
+            return
+
+        action = self.keymap.get(code) if remote or code in (
+            ecodes.KEY_F9, ecodes.KEY_F12, ecodes.KEY_HOMEPAGE
+        ) else None
+        now = time.monotonic()
+        if action == 'home' and pressed == 1 and now >= self.next_home:
+            self.next_home = now + 2.0
+            # The session stop kills this service before the receipt can arrive.
+            subprocess.Popen([SESSION, 'home'])
+        if self.output is None:
+            return
+        if action == 'mode' and pressed == 1 and now >= self.next_toggle:
+            self.next_toggle = now + 0.4
+            self.pointer_mode = not self.pointer_mode
+            print('Режим курсора' if self.pointer_mode else 'Режим стрелок', flush=True)
+        elif remote and action == 'ok' and pressed == 1:
+            if self.pointer_mode:
+                self.output.click()
+            else:
+                self.output.key('enter')
+        elif remote and action == 'back':
+            self.output.key('back')
+        elif remote and self.pointer_mode and code in MOTION:
+            self.output.move(*MOTION[code])
+        elif remote and action is None and code in KEY_CODES:
+            self.output.key_code(code)
+
+
+def listen_devices(selector, tracked, remote_names, use_grab):
+    for path in list_devices():
+        if path in tracked:
+            continue
+        device = None
+        try:
+            device = EvdevDevice(path)
+            keys = set(device.capabilities().get(ecodes.EV_KEY, []))
+            if device.name.startswith('HomeTV Browser') or not keys.intersection(
+                (ecodes.KEY_UP, ecodes.KEY_F9, ecodes.KEY_F12, ecodes.KEY_HOMEPAGE, ecodes.KEY_OK)
+            ):
+                device.close()
+                continue
+            remote = any(name in device.name.lower() for name in remote_names) or (
+                ecodes.KEY_OK in keys and ecodes.KEY_A not in keys
+            )
+            if remote and use_grab:
+                device.grab()
+            selector.register(device, selectors.EVENT_READ, remote)
+            tracked[path] = device
+        except OSError:
+            if device is not None:
+                device.close()
+
+
+def detach_device(selector, tracked, device):
+    selector.unregister(device)
+    tracked.pop(device.path, None)
+    device.close()
+
+
+def run(stop, output, cec_enabled, adapter, remote_names, keymap):
+    remote_input = BrowserInput(output, keymap)
+    pending = queue.SimpleQueue()
+    cec_thread = None
+    if cec_enabled:
+        cec_thread = threading.Thread(target=monitor_cec, args=(stop, pending, adapter), daemon=True)
+        cec_thread.start()
+
+    tracked = {}
+    try:
+        with selectors.DefaultSelector() as selector:
+            next_scan = 0
+            while not stop.is_set():
+                now = time.monotonic()
+                if now >= next_scan:
+                    listen_devices(selector, tracked, remote_names, use_grab=output is not None)
+                    next_scan = now + 1
+                for selected, _ in selector.select(timeout=0.1):
+                    device = selected.fileobj
+                    try:
+                        for event in device.read():
+                            if event.type == ecodes.EV_KEY:
+                                remote_input.key(event.code, event.value, selected.data)
+                    except BlockingIOError:
+                        continue
+                    except OSError:
+                        detach_device(selector, tracked, device)
+                while not pending.empty():
+                    remote_input.key(pending.get(), 1, True)
+    finally:
+        stop.set()
+        for device in tracked.values():
+            device.close()
+        if cec_thread is not None:
+            cec_thread.join(timeout=1)
+
+
+def main():
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    config = setup_configuration()
+    with contextlib.ExitStack() as resources:
+        try:
+            output = resources.enter_context(InputDevice('HomeTV Browser'))
+        except (OSError, UInputError) as error:
+            print(f'Недоступна эмуляция курсора: {error}', file=sys.stderr, flush=True)
+            output = None
+        run(stop, output, *config)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError) as error:
+        print(f'Ошибка управления браузером: {error}', file=sys.stderr)
+        sys.exit(1)

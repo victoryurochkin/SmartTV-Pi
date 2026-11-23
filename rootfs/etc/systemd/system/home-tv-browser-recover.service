@@ -1,0 +1,6 @@
+[Unit]
+Description=Restore HomeTV Pi Kodi after Chromium exits
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --no-block start home-tv-kodi.service

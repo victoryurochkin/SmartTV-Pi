@@ -1,0 +1,30 @@
+[Unit]
+Description=HomeTV Pi Chromium kiosk
+RequiresMountsFor=/data
+Wants=seatd.service user@1000.service home-tv-profile.service home-tv-browser-input.service
+After=seatd.service user@1000.service home-tv-profile.service home-tv-kodi.service getty@tty1.service
+Conflicts=home-tv-kodi.service getty@tty1.service
+OnFailure=home-tv-browser-recover.service
+
+[Service]
+Type=exec
+User=hometv
+Group=hometv
+Environment=HOME=/data/home
+Environment=LIBSEAT_BACKEND=seatd
+Environment=XDG_RUNTIME_DIR=/run/home-tv-browser
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
+WorkingDirectory=/data/home
+EnvironmentFile=-/run/mediacenter/profile.env
+RuntimeDirectory=home-tv-browser
+RuntimeDirectoryMode=0700
+UMask=0077
+TTYPath=/dev/tty1
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVTDisallocate=yes
+ExecStartPre=+/usr/bin/chvt 1
+ExecStart=/usr/lib/home-tv/browser
+TimeoutStopSec=8s

@@ -1,0 +1,21 @@
+{
+  "services": [
+    {"id": "youtube-tv", "name": "YouTube", "url": "https://www.youtube.com/tv", "icon": "DefaultVideo.png", "prefer_h264": true},
+    {"id": "youtube-web", "name": "YouTube в браузере", "url": "https://www.youtube.com/", "icon": "DefaultVideo.png", "prefer_h264": true},
+    {"id": "rutube", "name": "Rutube", "url": "https://rutube.ru/", "icon": "DefaultVideo.png"},
+    {"id": "vk-video", "name": "VK Видео", "url": "https://vkvideo.ru/", "icon": "DefaultVideo.png"},
+    {"id": "ivi", "name": "Иви", "url": "https://www.ivi.ru/", "icon": "DefaultVideo.png"},
+    {"id": "kion", "name": "КИОН", "url": "https://kion.ru/", "icon": "DefaultVideo.png"},
+    {"id": "okko", "name": "Okko", "url": "https://okko.tv/", "icon": "DefaultVideo.png"},
+    {"id": "wink", "name": "Wink", "url": "https://wink.ru/", "icon": "DefaultVideo.png"},
+    {"id": "start", "name": "START", "url": "https://start.ru/", "icon": "DefaultVideo.png"},
+    {"id": "premier", "name": "PREMIER", "url": "https://premier.one/", "icon": "DefaultVideo.png"},
+    {"id": "kinopoisk", "name": "Кинопоиск", "url": "https://hd.kinopoisk.ru/", "icon": "DefaultVideo.png"},
+    {"id": "netflix", "name": "Netflix", "url": "https://www.netflix.com/", "icon": "DefaultVideo.png"},
+    {"id": "disney-plus", "name": "Disney+", "url": "https://www.disneyplus.com/", "icon": "DefaultVideo.png"},
+    {"id": "prime-video", "name": "Prime Video", "url": "https://www.primevideo.com/", "icon": "DefaultVideo.png"},
+    {"id": "twitch", "name": "Twitch", "url": "https://www.twitch.tv/", "icon": "DefaultVideo.png"},
+    {"id": "yandex-music", "name": "Яндекс Музыка", "url": "https://music.yandex.ru/", "icon": "DefaultMusicSongs.png"},
+    {"id": "spotify", "name": "Spotify", "url": "https://open.spotify.com/", "icon": "DefaultMusicSongs.png"}
+  ]
+}

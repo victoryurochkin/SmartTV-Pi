@@ -1,0 +1,108 @@
+#!/usr/bin/python3
+"""Switch the display between Kodi and Chromium via a local systemd socket."""
+
+import os
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+from hometv_streaming import load_catalogue, validate_service_id
+
+
+SOCKET_PATH = '/run/home-tv-session.sock'
+SELECTION = Path('/run/home-tv-session/service-id')
+KODI = 'home-tv-kodi.service'
+BROWSER = 'home-tv-browser.service'
+SYSTEMCTL = '/usr/bin/systemctl'
+REQUEST_LIMIT = 64
+
+
+def start_unit(unit):
+    subprocess.run([SYSTEMCTL, 'start', unit], check=True, timeout=25)
+
+
+def switch(command):
+    if command == ['home']:
+        start_unit(KODI)
+        return
+
+    if len(command) != 2 or command[0] != 'open' or not validate_service_id(command[1]):
+        raise ValueError('Неизвестная команда переключения')
+
+    active = subprocess.run(
+        [SYSTEMCTL, 'is-active', '--quiet', BROWSER], check=False, timeout=3
+    )
+    if active.returncode == 0:
+        raise ValueError('Сначала вернитесь на главный экран')
+
+    pending = SELECTION.with_suffix('.tmp')
+    pending.write_text(command[1] + '\n', encoding='ascii')
+    pending.replace(SELECTION)
+    try:
+        start_unit(BROWSER)
+    except (subprocess.SubprocessError, OSError):
+        start_unit(KODI)
+        raise
+
+
+def handle_connection(connection):
+    connection.settimeout(2)
+    with connection.makefile('rb') as stream:
+        request = stream.readline(REQUEST_LIMIT)
+    if not request.endswith(b'\n'):
+        raise ValueError('Некорректный запрос')
+    switch(request.decode('ascii').split())
+
+
+def daemon():
+    if os.environ.get('LISTEN_PID') != str(os.getpid()) or os.environ.get('LISTEN_FDS') != '1':
+        raise RuntimeError('Служба должна запускаться сокетом home-tv-session.socket')
+
+    with socket.socket(fileno=3) as listener:
+        while True:
+            connection, _ = listener.accept()
+            with connection:
+                try:
+                    handle_connection(connection)
+                    response = 'OK'
+                except ValueError as error:
+                    response = f'ERROR {error}'
+                except (OSError, subprocess.SubprocessError) as error:
+                    print(f'Ошибка переключения сессии: {error}', file=sys.stderr, flush=True)
+                    response = 'ERROR Не удалось переключить сессию'
+                try:
+                    connection.sendall((response + '\n').encode('utf-8'))
+                except OSError:
+                    pass
+
+
+def request_switch(command):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(30)
+        connection.connect(SOCKET_PATH)
+        connection.sendall((' '.join(command) + '\n').encode('ascii'))
+        with connection.makefile('r', encoding='utf-8') as stream:
+            response = stream.readline(512).rstrip('\n')
+    if response != 'OK':
+        raise RuntimeError(response.removeprefix('ERROR ') or 'Служба переключения не ответила')
+
+
+def main(command):
+    if command == ['--daemon']:
+        daemon()
+        return
+    if len(command) == 2 and command[0] == 'open':
+        if not validate_service_id(command[1]) or command[1] not in load_catalogue():
+            raise ValueError('Неизвестный видеосервис')
+    elif command != ['home']:
+        raise ValueError('Команды: session open <service-id>, session home')
+    request_switch(command)
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except (OSError, RuntimeError, ValueError) as error:
+        print(error, file=sys.stderr)
+        sys.exit(1)

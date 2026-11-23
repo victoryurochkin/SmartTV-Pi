@@ -1,0 +1,1 @@
+SUBSYSTEM=="misc", KERNEL=="uinput", GROUP="hometv", MODE="0660"

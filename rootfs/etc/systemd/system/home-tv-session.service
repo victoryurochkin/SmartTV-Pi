@@ -1,0 +1,14 @@
+[Unit]
+Description=HomeTV Pi session switcher
+
+[Service]
+Type=exec
+ExecStart=/usr/lib/home-tv/session --daemon
+RuntimeDirectory=home-tv-session
+RuntimeDirectoryMode=0755
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX
+Restart=on-failure
