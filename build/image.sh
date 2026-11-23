@@ -66,11 +66,15 @@ if ((reuse)); then
 fi
 mkdir -p -- "$work"
 
-packages_stage=stage-hometv-packages
-appliance_stage=stage-hometv-appliance
+packages_stage='stage-hometv-packages'
+appliance_stage='stage-hometv-appliance'
 mkdir -p "$packages_stage/00-packages" "$appliance_stage/00-appliance" export-image/04a-hometv-data-id
 for stage in "$packages_stage" "$appliance_stage"; do
-    printf '#!/bin/bash -e\nrm -rf -- "$ROOTFS_DIR"\ncopy_previous\n' > "$stage/prerun.sh"
+    cat > "$stage/prerun.sh" <<'STAGE'
+#!/bin/bash -e
+rm -rf -- "$ROOTFS_DIR"
+copy_previous
+STAGE
 done
 cat >> "$packages_stage/prerun.sh" <<'PREFERENCES'
 cat > "$ROOTFS_DIR/etc/apt/preferences.d/90-hometv" <<'APT'
