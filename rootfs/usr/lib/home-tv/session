@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Switch the display between Kodi and Cage via a local systemd socket."""
 
+import json
 import os
 import socket
 import subprocess
@@ -8,6 +9,7 @@ import sys
 from pathlib import Path
 
 from hometv_games import GAMES
+from hometv_retro import selection_for_rom
 from hometv_streaming import load_catalogue, validate_service_id
 
 
@@ -16,7 +18,7 @@ SELECTION = Path('/run/home-tv-session/service-id')
 KODI = 'home-tv-kodi.service'
 BROWSER = 'home-tv-browser.service'
 SYSTEMCTL = '/usr/bin/systemctl'
-REQUEST_LIMIT = 64
+REQUEST_LIMIT = 16384
 
 
 def start_unit(unit):
@@ -30,6 +32,8 @@ def selection_from_command(command):
             return item_id
         if action == 'game' and item_id in GAMES:
             return f'game:{item_id}'
+    if len(command) == 3 and command[0] == 'emulate':
+        return selection_for_rom(command[1], command[2])
     raise ValueError('Неизвестная команда, сервис или игра')
 
 
@@ -47,7 +51,7 @@ def switch(command):
         raise ValueError('Сначала вернитесь на главный экран')
 
     pending = SELECTION.with_suffix('.tmp')
-    pending.write_text(selection + '\n', encoding='ascii')
+    pending.write_text(selection + '\n', encoding='utf-8')
     pending.replace(SELECTION)
     try:
         start_unit(BROWSER)
@@ -62,7 +66,13 @@ def handle_connection(connection):
         request = stream.readline(REQUEST_LIMIT)
     if not request.endswith(b'\n'):
         raise ValueError('Некорректный запрос')
-    switch(request.decode('ascii').split())
+    if request.startswith(b'['):
+        command = json.loads(request.decode('utf-8'))
+        if not isinstance(command, list) or not all(isinstance(word, str) for word in command):
+            raise ValueError('Некорректный запрос')
+    else:
+        command = request.decode('ascii').split()
+    switch(command)
 
 
 def daemon():
@@ -91,7 +101,7 @@ def request_switch(command):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(30)
         connection.connect(SOCKET_PATH)
-        connection.sendall((' '.join(command) + '\n').encode('ascii'))
+        connection.sendall((json.dumps(command, ensure_ascii=False) + '\n').encode('utf-8'))
         with connection.makefile('r', encoding='utf-8') as stream:
             response = stream.readline(512).rstrip('\n')
     if response != 'OK':

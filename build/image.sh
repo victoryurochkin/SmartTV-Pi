@@ -5,7 +5,7 @@ project=$(cd -- "$(dirname -- "$0")/.." && pwd)
 pigen_commit=c0d2c9f2cffc08bc56850b0a3eb23178f4226e8a
 builder_base=docker.io/library/debian:trixie@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
 builder="hometv-pigen:${pigen_commit:0:12}"
-version=${HOMETV_VERSION:-0.2.0}
+version=${HOMETV_VERSION:-0.3.0}
 cache=${HOMETV_BUILD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/hometv-pi}
 output=${HOMETV_OUTPUT:-$project/dist}
 reuse=0
@@ -85,6 +85,27 @@ APT
 PREFERENCES
 install -m 0644 "$project/build/packages" "$packages_stage/00-packages/00-packages-nr"
 install -m 0755 "$project/build/stage3-packages.sh" "$packages_stage/00-packages/01-run.sh"
+pcsx_revision=0f544ce1d18ac7dd114cb8f5507f01a29d3cd58c
+pcsx_name="pcsx-rearmed-$pcsx_revision.tar.gz"
+joypad_revision=0a675f2e98bd43d2eff088a2dd580797d3a8e89f
+joypad_name="retroarch-joypad-autoconfig-$joypad_revision.tar.gz"
+
+cache_source() {
+    local repo=$1 revision=$2 name=$3 checksum=$4
+    if [[ ! -f $cache/$name ]]; then
+        curl --fail --silent --show-error --location --ipv4 --connect-timeout 12 --max-time 60 \
+            --retry 2 --retry-max-time 90 "https://codeload.github.com/libretro/$repo/tar.gz/$revision" \
+            -o "$run/$name"
+        printf '%s  %s\n' "$checksum" "$run/$name" | sha256sum --check
+        mv -- "$run/$name" "$cache/$name"
+    fi
+    printf '%s  %s\n' "$checksum" "$cache/$name" | sha256sum --check
+}
+
+cache_source pcsx_rearmed "$pcsx_revision" "$pcsx_name" b594b0b00b51a3fd427f9f7425806c029eea861a73e40f13680bb0915b1a635c
+cache_source retroarch-joypad-autoconfig "$joypad_revision" "$joypad_name" 540b5e4f2d1f10e798fd26fb83aa6b6c2b1a7209a5aca2c8002a5404ff72fd79
+install -m 0644 "$cache/$pcsx_name" "$packages_stage/00-packages/pcsx-rearmed.tar.gz"
+install -m 0644 "$cache/$joypad_name" "$packages_stage/00-packages/joypad-autoconfig.tar.gz"
 packages_key=$(sha256sum "$packages_stage/prerun.sh" "$packages_stage"/00-packages/* | sha256sum | cut -d ' ' -f 1)
 if ((reuse)) && [[ -f $base/$packages_stage/rootfs/etc/hometv-build-packages ]] &&
     grep -Fxq "$packages_key" "$base/$packages_stage/rootfs/etc/hometv-build-packages"; then
@@ -148,4 +169,8 @@ for file in "$img.img.xz" "$img.img.sha256" "$img.img.xz.sha256" "$img.packages.
     mv -f -- "$output/.$file.tmp" "$output/$file"
 done
 cp -- "$project/build/hometv-icon.svg" "$output/hometv-icon.svg"
+for source in "$pcsx_name" "$joypad_name"; do
+    cp -- "$cache/$source" "$output/.$source.tmp"
+    mv -f -- "$output/.$source.tmp" "$output/$source"
+done
 printf 'Образ: %s/%s.img.xz\n' "$output" "$img"

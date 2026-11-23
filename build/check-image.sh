@@ -55,6 +55,16 @@ test -x "$root/usr/lib/home-tv/data-grow"
 test -x "$root/usr/bin/kodi"
 test -x "$root/usr/lib/aarch64-linux-gnu/kodi/kodi.bin"
 test -x "$root/usr/bin/chromium"
+test -x "$root/usr/bin/retroarch"
+for core in nestopia genesis_plus_gx; do
+    library="${core}_libretro.so"
+    test -f "$root/usr/lib/aarch64-linux-gnu/libretro/$library"
+    [[ $(readlink "$root/usr/lib/home-tv/cores/$library") == "/usr/lib/aarch64-linux-gnu/libretro/$library" ]]
+done
+test -s "$root/usr/lib/home-tv/cores/pcsx_rearmed_libretro.so"
+test -s "$root/usr/share/doc/home-tv-pcsx-rearmed/COPYING"
+test -s "$root/usr/share/doc/home-tv-joypad-autoconfig/COPYING"
+test -n "$(find "$root/usr/share/home-tv/retroarch/autoconfig/udev" -maxdepth 1 -name '*.cfg' -print -quit)"
 for game in lbreakouthd sgt-bridges sgt-fifteen sgt-lightup sgt-mines sgt-solo; do
     test -x "$root/usr/games/$game"
 done

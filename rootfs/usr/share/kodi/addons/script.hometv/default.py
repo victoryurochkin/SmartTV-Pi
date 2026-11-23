@@ -9,8 +9,10 @@ import xbmcgui
 
 from common import run, russian, show_error, tr, usb_drives
 from hometv_games import GAMES
+from hometv_retro import CONSOLES
 from hometv_state import CONFIG, check_pin, read_json
 from hometv_streaming import load_catalogue
+from roms import select_rom
 from setup import audio_menu, bluetooth_menu, panel_url, select_wifi, set_pin
 
 
@@ -91,8 +93,10 @@ def device_settings():
 def unlocked(action):
     try:
         locked = (read_json(CONFIG / "parental.json", {}) or {}).get("locked", [])
-        gate = action.removeprefix("web:").replace("game:", "game-", 1)
-        if gate not in locked and not (action.startswith("game:") and "games" in locked):
+        gate = action.removeprefix("web:").removeprefix("retrogames:").replace("game:", "game-", 1)
+        game_locked = action.startswith(("game:", "retrogames:")) and "games" in locked
+        retro_locked = action.startswith("retrogames:") and "retrogames" in locked
+        if gate not in locked and not game_locked and not retro_locked:
             return True
         pin = DIALOG.input(tr("PIN для открытия плитки", "Tile PIN"), option=xbmcgui.ALPHANUM_HIDE_INPUT)
         if check_pin(pin, read_json(CONFIG / "pin.json")):
@@ -103,9 +107,9 @@ def unlocked(action):
     return False
 
 
-def start_external(command, identifier):
+def start_external(command, identifier, *arguments):
     try:
-        run("/usr/lib/home-tv/session", command, identifier, timeout=18)
+        run("/usr/lib/home-tv/session", command, identifier, *arguments, timeout=18)
     except (OSError, subprocess.SubprocessError):
         show_error(tr("Не удалось запустить приложение", "Could not start the application"))
 
@@ -119,7 +123,19 @@ def select_game():
         launch(f"game:{names[choice]}")
 
 
+def select_console(close):
+    names = list(CONSOLES)
+    field = "name_ru" if russian() else "name_en"
+    choice = DIALOG.select(tr("Ретроконсоли", "Retro consoles"),
+                           [CONSOLES[name][field] for name in names])
+    if choice >= 0:
+        launch(f"retrogames:{names[choice]}", close)
+
+
 def launch(action, close=None):
+    if action == "retrogames":
+        select_console(close)
+        return
     if not unlocked(action):
         return
     if action.startswith("web:"):
@@ -127,6 +143,15 @@ def launch(action, close=None):
         return
     if action.startswith("game:"):
         start_external("game", action.removeprefix("game:"))
+        return
+    if action.startswith("retrogames:"):
+        console_id = action.removeprefix("retrogames:")
+        if console_id in CONSOLES:
+            rom = select_rom(console_id)
+            if rom is not None:
+                if close is not None:
+                    close()
+                start_external("emulate", console_id, str(rom))
         return
     if action == "games":
         select_game()
@@ -142,8 +167,7 @@ def launch(action, close=None):
         choose_usb(eject=action == "eject")
     else:
         windows = {"files": "Videos,files", "library": "Videos,videodb://movies/titles/",
-                   "music": "Music", "photos": "Pictures", "tv": "TVChannels",
-                   "retrogames": "Games"}
+                   "music": "Music", "photos": "Pictures", "tv": "TVChannels"}
         if action in windows:
             xbmc.executebuiltin(f"ActivateWindow({windows[action]})")
 
@@ -157,7 +181,8 @@ class Home(xbmcgui.WindowXMLDialog):
             (tr("Музыка", "Music"), tr("Альбомы и плейлисты", "Albums and playlists"), "music"),
             (tr("Фото", "Photos"), tr("Папки и слайд-шоу", "Folders and slideshows"), "photos"),
             (tr("Телевидение", "Live TV"), "IPTV / EPG", "tv"),
-            (tr("Игры", "Games"), tr("Аркады и головоломки", "Arcade and puzzles"), "games"),
+            (tr("Ретроконсоли", "Retro consoles"), "NES / Mega Drive / PS1", "retrogames"),
+            (tr("Головоломки", "Puzzles"), "HomeTV Pi", "games"),
             (tr("Извлечь USB", "Eject USB"), tr("Отключение диска", "Safe removal"), "eject"),
             (tr("Пульт на телефоне", "Phone remote"), "QR", "phone"),
             (tr("Настройки", "Settings"), "HomeTV Pi", "settings"),

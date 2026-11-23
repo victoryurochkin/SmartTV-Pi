@@ -10,6 +10,7 @@ import xbmcplugin
 
 sys.path.insert(0, "/usr/lib/home-tv")
 from hometv_games import GAMES
+from hometv_retro import CONSOLES
 from hometv_streaming import load_catalogue, validate_service_id
 
 
@@ -49,9 +50,9 @@ def media_tiles(russian):
 
 
 def game_tiles(russian):
-    for game_id, game in GAMES.items():
-        yield f"game:{game_id}", game["name_ru" if russian else "name_en"], "", game["icon"]
-    yield "retrogames", "Ретроигры" if russian else "Retro games", "", "DefaultAddonGame.png"
+    name_field = "name_ru" if russian else "name_en"
+    for console_id, console in CONSOLES.items():
+        yield f"retrogames:{console_id}", console[name_field], "", "DefaultAddonGame.png"
 
 
 def run_action(action):
@@ -60,6 +61,7 @@ def run_action(action):
         action in {item[0] for item in MEDIA} | {"retrogames"}
         or prefix == "web" and validate_service_id(value)
         or prefix == "game" and value in GAMES
+        or prefix == "retrogames" and value in CONSOLES
     ):
         xbmc.executebuiltin(f"RunAddon(script.hometv,action={action})")
 

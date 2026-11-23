@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from hometv_games import game_session
+from hometv_retro import retro_session
 from hometv_state import CONFIG, read_json
 from hometv_streaming import ALLOWED_FLAGS, load_catalogue, validate_service_id
 
@@ -54,10 +55,13 @@ def streaming_session(service_id, home):
 
 
 def main():
-    selection = SELECTION.read_text(encoding='ascii').strip()
+    selection = SELECTION.read_text(encoding='utf-8').removesuffix('\n')
     game_id = selection.removeprefix('game:')
     home = Path(os.environ['HOME'])
-    if game_id != selection:
+    if selection.startswith('retro:'):
+        _, console_id, rom = selection.split(':', 2)
+        command, environment, directory = retro_session(console_id, rom, home)
+    elif game_id != selection:
         command, environment, directory = game_session(game_id, home)
     else:
         command, environment, directory = streaming_session(selection, home)

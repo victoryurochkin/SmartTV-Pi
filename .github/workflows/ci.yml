@@ -7,7 +7,7 @@ on:
     inputs:
       version:
         description: Версия образа (SemVer)
-        default: 0.2.0
+        default: 0.3.0
         type: string
 
 permissions:
