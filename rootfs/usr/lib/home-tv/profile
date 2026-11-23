@@ -15,6 +15,7 @@ renderers=2
 gui_limit=3
 cache_mib=20
 zram_mib=0
+drm_prime=true
 
 case "$model" in
     'Raspberry Pi 3 Model B'*)
@@ -37,6 +38,9 @@ case "$model" in
         gui_limit=0
         cache_mib=64
         ;;
+    *)
+        drm_prime=false
+        ;;
 esac
 
 profile=$(mktemp "$profile_dir/.profile.XXXXXX")
@@ -48,6 +52,7 @@ HOMETV_MAX_HEIGHT=$height
 HOMETV_CHROMIUM_RENDERERS=$renderers
 HOMETV_KODI_GUI_LIMIT=$gui_limit
 HOMETV_KODI_CACHE_MIB=$cache_mib
+HOMETV_KODI_DRM_PRIME=$drm_prime
 HOMETV_ZRAM_MIB=$zram_mib
 EOF
 chmod 0644 "$profile"

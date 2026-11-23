@@ -1,0 +1,12 @@
+[Unit]
+Description=Постоянные системные настройки HomeTV Pi
+RequiresMountsFor=/data
+Before=NetworkManager.service bluetooth.service ssh.service home-tv-kodi.service home-tv-panel.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/home-tv/state
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

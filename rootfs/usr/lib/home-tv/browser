@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from hometv_state import CONFIG, read_json
 from hometv_streaming import ALLOWED_FLAGS, load_catalogue, validate_service_id
 
 
@@ -49,6 +50,10 @@ def main():
     renderers = int(os.environ.get('HOMETV_CHROMIUM_RENDERERS', '2'))
     if not 1 <= renderers <= 8:
         raise ValueError('Некорректный лимит процессов Chromium')
+    settings = read_json(CONFIG / 'setup.json', {}) or {}
+    if settings.get('keyboard') == 'us,ru':
+        os.environ['XKB_DEFAULT_LAYOUT'] = 'us,ru'
+        os.environ['XKB_DEFAULT_OPTIONS'] = 'grp:alt_shift_toggle'
     command = browser_command(service, profile, runtime, renderers)
     completed = subprocess.run(['/usr/bin/dbus-run-session', '--', *command], check=False)
     print(f'Графическая сессия Chromium завершилась ({completed.returncode}). Возврат в Kodi.',

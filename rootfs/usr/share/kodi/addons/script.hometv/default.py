@@ -7,7 +7,9 @@ import xbmcaddon
 import xbmcgui
 
 from common import run, show_error, tr, usb_drives
+from hometv_state import CONFIG, check_pin, read_json
 from hometv_streaming import load_catalogue
+from setup import audio_menu, bluetooth_menu, panel_url, select_wifi, set_pin
 
 
 ADDON = xbmcaddon.Addon()
@@ -73,6 +75,31 @@ def choose_usb(eject=False):
                       "Check the drive and stop playback before removal."))
 
 
+def device_settings():
+    options = [tr("Настройки Kodi: экран и звук", "Kodi settings: display and audio"), "Wi-Fi",
+               "Bluetooth", tr("Аудиовыход браузера", "Browser audio output"),
+               tr("Задать или изменить PIN", "Set or change PIN")]
+    choice = DIALOG.select(tr("Настройки HomeTV Pi", "HomeTV Pi settings"), options)
+    if choice == 0:
+        xbmc.executebuiltin("ActivateWindow(Settings)")
+    elif choice >= 1:
+        [select_wifi, bluetooth_menu, audio_menu, set_pin][choice - 1]()
+
+
+def unlocked(action):
+    try:
+        locked = (read_json(CONFIG / "parental.json", {}) or {}).get("locked", [])
+        if action.removeprefix("web:") not in locked:
+            return True
+        pin = DIALOG.input(tr("PIN для открытия плитки", "Tile PIN"), option=xbmcgui.ALPHANUM_HIDE_INPUT)
+        if check_pin(pin, read_json(CONFIG / "pin.json")):
+            return True
+    except (AttributeError, OSError, TypeError, ValueError):
+        pass
+    show_error(tr("Плитка закрыта", "Tile locked"))
+    return False
+
+
 class Home(xbmcgui.WindowXMLDialog):
     def onInit(self):
         local = [
@@ -82,8 +109,9 @@ class Home(xbmcgui.WindowXMLDialog):
             (tr("Музыка", "Music"), tr("Альбомы и плейлисты", "Albums and playlists"), "music"),
             (tr("Фото", "Photos"), tr("Папки и слайд-шоу", "Folders and slideshows"), "photos"),
             (tr("Телевидение", "Live TV"), "IPTV / EPG", "tv"),
-            (tr("Извлечь USB", "Eject USB"), tr("Безопасное отключение", "Safe removal"), "eject"),
-            (tr("Настройки", "Settings"), "Kodi", "settings"),
+            (tr("Извлечь USB", "Eject USB"), tr("Отключение диска", "Safe removal"), "eject"),
+            (tr("Пульт на телефоне", "Phone remote"), "QR", "phone"),
+            (tr("Настройки", "Settings"), "HomeTV Pi", "settings"),
         ]
         try:
             web = [(entry["name"], entry.get("quality_note") or tr("Веб-сервис", "Web service"),
@@ -99,6 +127,8 @@ class Home(xbmcgui.WindowXMLDialog):
         self.panel.addItems([xbmcgui.ListItem(label, detail) for label, detail, _ in self.tiles])
         self.setFocusId(100)
         self.getControl(201).setLabel(tr("Медиацентр", "Media center"))
+        if len(self.tiles) > 12:
+            self.getControl(202).setLabel(tr("↓  Ещё плитки", "↓  More tiles"))
 
     def onClick(self, control_id):
         if control_id != 100:
@@ -107,18 +137,27 @@ class Home(xbmcgui.WindowXMLDialog):
         if not 0 <= index < len(self.tiles):
             return
         action = self.tiles[index][2]
+        if not unlocked(action):
+            return
         if action.startswith("web:"):
             try:
                 run("/usr/lib/home-tv/session", "open", action.removeprefix("web:"), timeout=15)
             except (OSError, subprocess.SubprocessError):
                 show_error(tr("Не удалось открыть сервис", "Could not open the service"))
             return
+        if action == "phone":
+            panel_url()
+            return
+        if action == "settings":
+            self.close()
+            device_settings()
+            return
         self.close()
         if action in {"usb", "eject"}:
             choose_usb(eject=action == "eject")
             return
         windows = {"files": "Videos,files", "library": "Videos,videodb://movies/titles/",
-                   "music": "Music", "photos": "Pictures", "tv": "TVChannels", "settings": "Settings"}
+                   "music": "Music", "photos": "Pictures", "tv": "TVChannels"}
         xbmc.executebuiltin(f"ActivateWindow({windows[action]})")
 
 

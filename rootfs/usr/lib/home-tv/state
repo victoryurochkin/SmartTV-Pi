@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+umask 077
+
+make_ssh_keys() {
+    if [ ! -s /data/system/ssh_host_ed25519_key ]; then
+        ssh-keygen -q -t ed25519 -N '' -f /data/system/ssh_host_ed25519_key
+    fi
+}
+
+case "${1:-boot}" in
+    ssh-keys) make_ssh_keys; exit ;;
+    boot) ;;
+    *) exit 2 ;;
+esac
+
+install -d -m 0700 /data/system /data/system/network /data/system/bluetooth
+install -d -m 0755 /data/ssh
+install -d -o hometv -g hometv -m 0700 /data/config
+if [ -d /etc/NetworkManager/system-connections ]; then
+    mountpoint -q /etc/NetworkManager/system-connections ||
+        mount --bind /data/system/network /etc/NetworkManager/system-connections
+fi
+if [ -d /var/lib/bluetooth ]; then
+    mountpoint -q /var/lib/bluetooth || mount --bind /data/system/bluetooth /var/lib/bluetooth
+fi
+python3 /usr/lib/home-tv/hometv_state.py
+
+if [ -s /data/system/ssh-enabled ] && [ -s /data/ssh/tvadmin ]; then
+    make_ssh_keys
+    systemctl --no-block start ssh.service
+fi

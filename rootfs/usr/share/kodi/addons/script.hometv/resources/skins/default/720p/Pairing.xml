@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window>
+  <controls>
+    <control type="image"><width>1280</width><height>720</height><texture colordiffuse="FF10171F">colors/white.png</texture></control>
+    <control type="image" id="210">
+      <left>448</left><top>95</top><width>384</width><height>384</height><aspectratio>keep</aspectratio>
+    </control>
+    <control type="label" id="211">
+      <left>120</left><top>513</top><width>1040</width><height>48</height>
+      <align>center</align><font>font32</font><textcolor>FFF5F9FC</textcolor>
+    </control>
+    <control type="label" id="212">
+      <left>100</left><top>598</top><width>1080</width><height>38</height>
+      <align>center</align><font>font13</font><textcolor>FFA7BECF</textcolor>
+    </control>
+  </controls>
+</window>

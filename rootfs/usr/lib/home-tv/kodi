@@ -9,10 +9,18 @@ mkdir -p "$userdata"
 if [ ! -e "$userdata/guisettings.xml" ]; then
     settings=$(mktemp "$userdata/.guisettings.XXXXXX")
     trap 'rm -f "$settings"' EXIT
+    language=resource.language.en_gb
+    if [ -f /usr/share/kodi/addons/resource.language.ru_ru/addon.xml ]; then
+        language=resource.language.ru_ru
+    fi
     cat > "$settings" <<EOF
 <settings version="2">
+  <setting id="locale.language">$language</setting>
   <setting id="videoscreen.limitguisize">${HOMETV_KODI_GUI_LIMIT:-3}</setting>
   <setting id="filecache.memorysize">${HOMETV_KODI_CACHE_MIB:-20}</setting>
+  <setting id="videoplayer.useprimedecoder">${HOMETV_KODI_DRM_PRIME:-false}</setting>
+  <setting id="videoplayer.useprimedecoderforhw">true</setting>
+  <setting id="videoplayer.useprimerenderer">0</setting>
 </settings>
 EOF
     ln "$settings" "$userdata/guisettings.xml"

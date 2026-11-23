@@ -1,0 +1,1 @@
+hometv ALL=(root) NOPASSWD: /usr/lib/home-tv/admin ""
